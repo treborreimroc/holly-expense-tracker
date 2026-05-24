@@ -4,7 +4,6 @@ import psycopg2.extras
 from urllib.parse import urlparse
 import bcrypt
 from functools import wraps
-from database import get_db_connection, init_database, seed_initial_data
 from datetime import datetime, timedelta
 import os
 

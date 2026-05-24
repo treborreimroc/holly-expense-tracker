@@ -437,6 +437,72 @@ def delete_subcategory(subcategory_id):
     
     return redirect(url_for('manage_subcategories'))
 
+
+# ============= QUICK ADD ROUTES =============
+@app.route('/quick-add/source', methods=['POST'])
+@login_required
+def quick_add_source():
+    name = request.form.get('name', '').strip()
+    if name:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO sources (name, type) VALUES (%s, %s) RETURNING id', 
+                      (name, 'Bank Account'))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'id': new_id, 'name': name})
+    return jsonify({'success': False})
+
+@app.route('/quick-add/category', methods=['POST'])
+@login_required
+def quick_add_category():
+    name = request.form.get('name', '').strip()
+    if name:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO categories (name, color) VALUES (%s, %s) RETURNING id', 
+                      (name, '#6c757d'))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'id': new_id, 'name': name})
+    return jsonify({'success': False})
+
+@app.route('/quick-add/vendor', methods=['POST'])
+@login_required
+def quick_add_vendor():
+    name = request.form.get('name', '').strip()
+    if name:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO vendors (name) VALUES (%s) RETURNING id', (name,))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'id': new_id, 'name': name})
+    return jsonify({'success': False})
+
+@app.route('/quick-add/subcategory', methods=['POST'])
+@login_required
+def quick_add_subcategory():
+    name = request.form.get('name', '').strip()
+    category_id = request.form.get('category_id')
+    if name and category_id:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s) RETURNING id', 
+                      (name, category_id))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'id': new_id, 'name': name})
+    return jsonify({'success': False})
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

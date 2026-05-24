@@ -24,57 +24,69 @@
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="source_id" class="form-label">Source</label>
-                <select class="form-control" id="source_id" name="source_id" required>
-                    <option value="">Select Source...</option>
-                    {% for source in sources %}
-                    <option value="{{ source.id }}" 
-                            {% if source.id == expense.source_id %}selected{% endif %}>
-                        {{ source.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="input-group">
+                    <select class="form-control" id="source_id" name="source_id" required>
+                        <option value="">Select Source...</option>
+                        {% for source in sources %}
+                        <option value="{{ source.id }}" 
+                                {% if source.id == expense.source_id %}selected{% endif %}>
+                            {{ source.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-success" onclick="quickAddSource()">+</button>
+                </div>
             </div>
             
             <div class="col-md-6 mb-3">
                 <label for="category_id" class="form-label">Category</label>
-                <select class="form-control" id="category_id" name="category_id" required>
-                    <option value="">Select Category...</option>
-                    {% for category in categories %}
-                    <option value="{{ category.id }}"
-                            {% if category.id == expense.category_id %}selected{% endif %}>
-                        {{ category.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="input-group">
+                    <select class="form-control" id="category_id" name="category_id" required>
+                        <option value="">Select Category...</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}"
+                                {% if category.id == expense.category_id %}selected{% endif %}>
+                            {{ category.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-success" onclick="quickAddCategory()">+</button>
+                </div>
             </div>
         </div>
         
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="subcategory_id" class="form-label">Subcategory (Optional)</label>
-                <select class="form-control" id="subcategory_id" name="subcategory_id">
-                    <option value="">None</option>
-                    {% for sub in subcategories %}
-                    <option value="{{ sub.id }}" 
-                            data-category="{{ sub.category_id }}"
-                            {% if sub.id == expense.subcategory_id %}selected{% endif %}>
-                        {{ sub.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="input-group">
+                    <select class="form-control" id="subcategory_id" name="subcategory_id">
+                        <option value="">None</option>
+                        {% for sub in subcategories %}
+                        <option value="{{ sub.id }}" 
+                                data-category="{{ sub.category_id }}"
+                                {% if sub.id == expense.subcategory_id %}selected{% endif %}>
+                            {{ sub.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-success" onclick="quickAddSubcategory()">+</button>
+                </div>
             </div>
             
             <div class="col-md-6 mb-3">
                 <label for="vendor_id" class="form-label">Vendor (Optional)</label>
-                <select class="form-control" id="vendor_id" name="vendor_id">
-                    <option value="">None</option>
-                    {% for vendor in vendors %}
-                    <option value="{{ vendor.id }}"
-                            {% if vendor.id == expense.vendor_id %}selected{% endif %}>
-                        {{ vendor.name }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="input-group">
+                    <select class="form-control" id="vendor_id" name="vendor_id">
+                        <option value="">None</option>
+                        {% for vendor in vendors %}
+                        <option value="{{ vendor.id }}"
+                                {% if vendor.id == expense.vendor_id %}selected{% endif %}>
+                            {{ vendor.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <button type="button" class="btn btn-success" onclick="quickAddVendor()">+</button>
+                </div>
             </div>
         </div>
         
@@ -97,13 +109,11 @@
 </div>
 
 <script>
-// Filter subcategories based on selected category
 function filterSubcategories() {
     const categoryId = document.getElementById('category_id').value;
     const subcategorySelect = document.getElementById('subcategory_id');
     const options = subcategorySelect.querySelectorAll('option[data-category]');
     
-    // Show/hide based on category
     options.forEach(opt => {
         if (!categoryId || opt.getAttribute('data-category') === categoryId) {
             opt.style.display = 'block';
@@ -113,10 +123,104 @@ function filterSubcategories() {
     });
 }
 
-// Run on page load
 filterSubcategories();
-
-// Run on category change
 document.getElementById('category_id').addEventListener('change', filterSubcategories);
+
+// Same quick-add functions as add_expense
+function quickAddSource() {
+    const name = prompt('Enter new source name:');
+    if (name && name.trim()) {
+        fetch('{{ url_for("quick_add_source") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'name=' + encodeURIComponent(name)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const select = document.getElementById('source_id');
+                const option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.name;
+                option.selected = true;
+                select.appendChild(option);
+            }
+        });
+    }
+}
+
+function quickAddCategory() {
+    const name = prompt('Enter new category name:');
+    if (name && name.trim()) {
+        fetch('{{ url_for("quick_add_category") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'name=' + encodeURIComponent(name)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const select = document.getElementById('category_id');
+                const option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.name;
+                option.selected = true;
+                select.appendChild(option);
+            }
+        });
+    }
+}
+
+function quickAddVendor() {
+    const name = prompt('Enter new vendor name:');
+    if (name && name.trim()) {
+        fetch('{{ url_for("quick_add_vendor") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'name=' + encodeURIComponent(name)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const select = document.getElementById('vendor_id');
+                const option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.name;
+                option.selected = true;
+                select.appendChild(option);
+            }
+        });
+    }
+}
+
+function quickAddSubcategory() {
+    const categoryId = document.getElementById('category_id').value;
+    if (!categoryId) {
+        alert('Please select a category first');
+        return;
+    }
+    
+    const name = prompt('Enter new subcategory name:');
+    if (name && name.trim()) {
+        fetch('{{ url_for("quick_add_subcategory") }}', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'name=' + encodeURIComponent(name) + '&category_id=' + categoryId
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                const select = document.getElementById('subcategory_id');
+                const option = document.createElement('option');
+                option.value = data.id;
+                option.textContent = data.name;
+                option.setAttribute('data-category', categoryId);
+                option.style.display = 'block';
+                option.selected = true;
+                select.appendChild(option);
+            }
+        });
+    }
+}
 </script>
 {% endblock %}

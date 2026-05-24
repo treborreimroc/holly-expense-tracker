@@ -5,11 +5,13 @@ from urllib.parse import urlparse
 
 print("Creating PostgreSQL database schema...")
 
-# Get database URL from environment
 database_url = os.environ.get('DATABASE_URL')
+if not database_url:
+    print("ERROR: DATABASE_URL not set!")
+    exit(1)
+
 result = urlparse(database_url)
 
-# Connect to PostgreSQL
 conn = psycopg2.connect(
     database=result.path[1:],
     user=result.username,
@@ -19,32 +21,24 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
-# Drop existing tables (fresh start)
-cursor.execute("DROP TABLE IF EXISTS expenses CASCADE")
-cursor.execute("DROP TABLE IF EXISTS income CASCADE")
-cursor.execute("DROP TABLE IF EXISTS budget CASCADE")
-cursor.execute("DROP TABLE IF EXISTS income_budget CASCADE")
-cursor.execute("DROP TABLE IF EXISTS recurring_expenses CASCADE")
-cursor.execute("DROP TABLE IF EXISTS recurring_income CASCADE")
-cursor.execute("DROP TABLE IF EXISTS debts CASCADE")
-cursor.execute("DROP TABLE IF EXISTS debt_payments CASCADE")
-cursor.execute("DROP TABLE IF EXISTS users CASCADE")
-cursor.execute("DROP TABLE IF EXISTS sources CASCADE")
-cursor.execute("DROP TABLE IF EXISTS categories CASCADE")
-cursor.execute("DROP TABLE IF EXISTS subcategories CASCADE")
-cursor.execute("DROP TABLE IF EXISTS vendors CASCADE")
-cursor.execute("DROP TABLE IF EXISTS tax_rates CASCADE")
-cursor.execute("DROP TABLE IF EXISTS income_categories CASCADE")
+# Drop existing tables
+tables = ['debt_payments', 'debts', 'recurring_income', 'recurring_expenses', 
+          'income_budget', 'budget', 'income', 'expenses', 'income_categories',
+          'tax_rates', 'vendors', 'subcategories', 'categories', 'sources', 'users']
 
-# Create tables
+for table in tables:
+    cursor.execute(f"DROP TABLE IF EXISTS {table} CASCADE")
+
+# Create users table
 cursor.execute("""
     CREATE TABLE users (
         id SERIAL PRIMARY KEY,
         username VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL
+        password TEXT NOT NULL
     )
 """)
 
+# Create sources table
 cursor.execute("""
     CREATE TABLE sources (
         id SERIAL PRIMARY KEY,
@@ -53,6 +47,7 @@ cursor.execute("""
     )
 """)
 
+# Create categories table
 cursor.execute("""
     CREATE TABLE categories (
         id SERIAL PRIMARY KEY,
@@ -61,6 +56,7 @@ cursor.execute("""
     )
 """)
 
+# Create subcategories table  
 cursor.execute("""
     CREATE TABLE subcategories (
         id SERIAL PRIMARY KEY,
@@ -69,6 +65,7 @@ cursor.execute("""
     )
 """)
 
+# Create vendors table
 cursor.execute("""
     CREATE TABLE vendors (
         id SERIAL PRIMARY KEY,
@@ -76,6 +73,7 @@ cursor.execute("""
     )
 """)
 
+# Create tax_rates table
 cursor.execute("""
     CREATE TABLE tax_rates (
         id SERIAL PRIMARY KEY,
@@ -86,6 +84,7 @@ cursor.execute("""
     )
 """)
 
+# Create expenses table
 cursor.execute("""
     CREATE TABLE expenses (
         id SERIAL PRIMARY KEY,
@@ -113,6 +112,7 @@ cursor.execute("""
     )
 """)
 
+# Create income_categories table
 cursor.execute("""
     CREATE TABLE income_categories (
         id SERIAL PRIMARY KEY,
@@ -121,6 +121,7 @@ cursor.execute("""
     )
 """)
 
+# Create income table
 cursor.execute("""
     CREATE TABLE income (
         id SERIAL PRIMARY KEY,
@@ -136,6 +137,7 @@ cursor.execute("""
     )
 """)
 
+# Create budget table
 cursor.execute("""
     CREATE TABLE budget (
         id SERIAL PRIMARY KEY,
@@ -146,6 +148,7 @@ cursor.execute("""
     )
 """)
 
+# Create income_budget table
 cursor.execute("""
     CREATE TABLE income_budget (
         id SERIAL PRIMARY KEY,
@@ -156,6 +159,7 @@ cursor.execute("""
     )
 """)
 
+# Create recurring_expenses table
 cursor.execute("""
     CREATE TABLE recurring_expenses (
         id SERIAL PRIMARY KEY,
@@ -176,6 +180,7 @@ cursor.execute("""
     )
 """)
 
+# Create recurring_income table
 cursor.execute("""
     CREATE TABLE recurring_income (
         id SERIAL PRIMARY KEY,
@@ -194,6 +199,7 @@ cursor.execute("""
     )
 """)
 
+# Create debts table
 cursor.execute("""
     CREATE TABLE debts (
         id SERIAL PRIMARY KEY,
@@ -207,6 +213,7 @@ cursor.execute("""
     )
 """)
 
+# Create debt_payments table
 cursor.execute("""
     CREATE TABLE debt_payments (
         id SERIAL PRIMARY KEY,
@@ -219,28 +226,43 @@ cursor.execute("""
 
 # Insert default admin user
 hashed = bcrypt.hashpw(b'admin123', bcrypt.gensalt())
-cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', ('admin', hashed.decode('utf-8')))
+cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', 
+               ('admin', hashed.decode('utf-8')))
 
-# Insert default data
+# Insert default sources
 cursor.execute("INSERT INTO sources (name, type) VALUES (%s, %s)", ('Cash', 'Cash'))
 cursor.execute("INSERT INTO sources (name, type) VALUES (%s, %s)", ('Debit Card', 'Bank Account'))
 cursor.execute("INSERT INTO sources (name, type) VALUES (%s, %s)", ('Credit Card', 'Credit Card'))
 
+# Insert default categories
 cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Food', '#ff6b6b'))
 cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Shelter', '#4ecdc4'))
 cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Bills', '#95e1d3'))
 cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Transportation', '#feca57'))
+cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Entertainment', '#ff9ff3'))
+cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Healthcare', '#48dbfb'))
+cursor.execute("INSERT INTO categories (name, color) VALUES (%s, %s)", ('Shopping', '#1dd1a1'))
 
-cursor.execute("INSERT INTO income_categories (name, color) VALUES (%s, %s)", ('Wages/Salary', '#28a745'))
-cursor.execute("INSERT INTO income_categories (name, color) VALUES (%s, %s)", ('Business Income', '#20c997'))
+# Insert default income categories
+cursor.execute("INSERT INTO income_categories (name, color) VALUES (%s, %s)", 
+               ('Wages/Salary', '#28a745'))
+cursor.execute("INSERT INTO income_categories (name, color) VALUES (%s, %s)", 
+               ('Business Income', '#20c997'))
+cursor.execute("INSERT INTO income_categories (name, color) VALUES (%s, %s)", 
+               ('Investment Income', '#17a2b8'))
 
+# Insert default tax rates
 cursor.execute("INSERT INTO tax_rates (name, rate, display_order, is_active) VALUES (%s, %s, %s, %s)", 
                ('No Tax', 0, 0, 1))
 cursor.execute("INSERT INTO tax_rates (name, rate, display_order, is_active) VALUES (%s, %s, %s, %s)", 
                ('GST (5%)', 5, 1, 1))
+cursor.execute("INSERT INTO tax_rates (name, rate, display_order, is_active) VALUES (%s, %s, %s, %s)", 
+               ('PST (7%)', 7, 2, 1))
+cursor.execute("INSERT INTO tax_rates (name, rate, display_order, is_active) VALUES (%s, %s, %s, %s)", 
+               ('HST (13%)', 13, 3, 1))
 
 conn.commit()
 conn.close()
 
 print("✅ PostgreSQL database created successfully!")
-print("Login with: admin123")
+print("Login with password: admin123")

@@ -1,72 +1,53 @@
-from flask import Flask, render_template, request, redirect, url_for, jsonify, make_response, session, send_file
+from flask import Flask, render_template, request, redirect, url_for, session, send_file, jsonify, flash, send_from_directory
 import psycopg2
 import psycopg2.extras
 from urllib.parse import urlparse
 import bcrypt
-from functools import wraps
 from datetime import datetime, timedelta
+from functools import wraps
 import os
+from io import BytesIO
+from reportlab.lib.pagesizes import letter, portrait
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+import csv
+from collections import defaultdict
+import calendar
 
 app = Flask(__name__)
-app.secret_key = 'your-secret-key-change-this-in-production'  # Change this!
+app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 
-
-# Google Sheets Configuration
-GOOGLE_SHEET_ID = '1FrTYMuwSgvUEHdonsfrt0iWY83_Iz13zMw7_ZuO5hXA'
-GOOGLE_CREDENTIALS_FILE = 'google_credentials.json'
-
-def get_google_sheet():
-    """Connect to Google Sheet"""
-    scope = ['https://spreadsheets.google.com/feeds',
-             'https://www.googleapis.com/auth/drive']
-    creds = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_CREDENTIALS_FILE, scope)
-    client = gspread.authorize(creds)
-    sheet = client.open_by_key(GOOGLE_SHEET_ID).sheet1
-    return sheet
-app.config['SECRET_KEY'] = 'your-secret-key-here-change-in-production'
-
-# Session security configuration
-app.config['PERMANENT_SESSION_LIFETIME'] = 300  # 5 minutes timeout
-app.config['SESSION_COOKIE_SECURE'] = False  # Set to True if using HTTPS
-app.config['SESSION_COOKIE_HTTPONLY'] = True  # Prevent JavaScript access
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'  # CSRF protection
-
-# Security: Clear session on startup for fresh login
-@app.before_request
-def check_login_on_startup():
-    """Ensure user is logged in for protected routes"""
-    # Skip login check for these routes
-    if request.endpoint in ['login', 'static']:
-        return
+# PostgreSQL connection function
+def get_db_connection():
+    """Connect to PostgreSQL database"""
+    database_url = os.environ.get('DATABASE_URL')
+    if not database_url:
+        raise ValueError("DATABASE_URL environment variable not set")
     
-    # Require login for all other routes
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    result = urlparse(database_url)
+    
+    conn = psycopg2.connect(
+        database=result.path[1:],
+        user=result.username,
+        password=result.password,
+        host=result.hostname,
+        port=result.port,
+        cursor_factory=psycopg2.extras.RealDictCursor
+    )
+    return conn
 
-
-
-# Initialize database on first run
-
-# ============================================================================
-# AUTHENTICATION SYSTEM
-# ============================================================================
-
+# Login required decorator
 def login_required(f):
-    """Decorator to require login for routes"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect(url_for('login', next=request.url))
+            return redirect(url_for('login'))
         return f(*args, **kwargs)
     return decorated_function
-
-@app.before_request
-def make_session_permanent():
-    """Make sessions temporary - expire when browser closes"""
-    session.permanent = False  # Session expires when browser closes
-
-
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Login page"""
@@ -75,7 +56,7 @@ def login():
         password = request.form.get('password')
         
         conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        user = conn.execute('SELECT * FROM users WHERE username = %s', (username,)).fetchone()
         conn.close()
         
         if user and bcrypt.checkpw(password.encode('utf-8'), user['password_hash']):
@@ -90,11 +71,15 @@ def login():
     
     return render_template('login.html')
 
+
+
 @app.route('/logout')
 def logout():
     """Logout"""
     session.clear()
     return redirect(url_for('login'))
+
+
 
 @app.route('/change-password', methods=['GET', 'POST'])
 @login_required
@@ -109,7 +94,7 @@ def change_password():
             return render_template('change_password.html', error='New passwords do not match')
         
         conn = get_db_connection()
-        user = conn.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+        user = conn.execute('SELECT * FROM users WHERE id = %s', (session['user_id'],)).fetchone()
         
         if not bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash']):
             conn.close()
@@ -117,7 +102,7 @@ def change_password():
         
         # Hash new password
         new_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
-        conn.execute('UPDATE users SET password_hash = ? WHERE id = ?', 
+        conn.execute('UPDATE users SET password_hash = %s WHERE id = %s', 
                     (new_hash, session['user_id']))
         conn.commit()
         conn.close()
@@ -128,6 +113,8 @@ def change_password():
 
 
 @login_required
+
+
 @app.route('/')
 def index():
     """Main dashboard - redirect to add expense or login"""
@@ -138,6 +125,8 @@ def index():
     return redirect(url_for('add_expense_page'))
 
 @login_required
+
+
 @app.route('/add-expense')
 def add_expense_page():
     """Add expense page - just the entry form"""
@@ -158,6 +147,8 @@ def add_expense_page():
                          tax_rates=tax_rates)
 
 @login_required
+
+
 @app.route('/view-expenses')
 def view_expenses():
     """Expenses page - main expense tracking interface with filtering"""
@@ -184,47 +175,47 @@ def view_expenses():
     today = datetime.now().date()
     if filter_period == 'wtd':  # Week to date (Monday to today)
         start_of_week = today - timedelta(days=today.weekday())
-        where_clauses.append('e.date >= ?')
+        where_clauses.append('e.date >= %s')
         params.append(start_of_week.isoformat())
     elif filter_period == 'mtd':  # Month to date
         start_of_month = today.replace(day=1)
-        where_clauses.append('e.date >= ?')
+        where_clauses.append('e.date >= %s')
         params.append(start_of_month.isoformat())
     elif filter_period == 'ytd':  # Year to date
         start_of_year = today.replace(month=1, day=1)
-        where_clauses.append('e.date >= ?')
+        where_clauses.append('e.date >= %s')
         params.append(start_of_year.isoformat())
     elif filter_period == 'custom' and filter_start_date:
-        where_clauses.append('e.date >= ?')
+        where_clauses.append('e.date >= %s')
         params.append(filter_start_date)
         if filter_end_date:
-            where_clauses.append('e.date <= ?')
+            where_clauses.append('e.date <= %s')
             params.append(filter_end_date)
     
     # Source filtering
     if filter_source:
-        where_clauses.append('e.source_id = ?')
+        where_clauses.append('e.source_id = %s')
         params.append(filter_source)
     
     # Category filtering
     if filter_category:
-        where_clauses.append('e.category_id = ?')
+        where_clauses.append('e.category_id = %s')
         params.append(filter_category)
     
     # Vendor filtering
     if filter_vendor:
-        where_clauses.append('e.vendor_id = ?')
+        where_clauses.append('e.vendor_id = %s')
         params.append(filter_vendor)
     
     # Search filtering (description or notes)
     if filter_search:
-        where_clauses.append('(e.description LIKE ? OR e.notes LIKE ?)')
+        where_clauses.append('(e.description LIKE %s OR e.notes LIKE %s)')
         search_term = f'%{filter_search}%'
         params.extend([search_term, search_term])
     
     # Subcategory filtering
     if filter_subcategory:
-        where_clauses.append('e.subcategory_id = ?')
+        where_clauses.append('e.subcategory_id = %s')
         params.append(filter_subcategory)
     
     # Filter archived expenses unless show_archived is true
@@ -235,7 +226,7 @@ def view_expenses():
     where_clauses.append('(e.is_split IS NULL OR e.is_split != 2)')
     
     # Hide future recurring expenses (they still show in P&L for forecasting)
-    where_clauses.append('(e.recurring_id IS NULL OR e.date <= ?)')
+    where_clauses.append('(e.recurring_id IS NULL OR e.date <= %s)')
     params.append(today.isoformat())
     
     # Construct the WHERE clause
@@ -305,12 +296,14 @@ def view_expenses():
                          filter_end_date=filter_end_date)
 
 @login_required
+
+
 @app.route('/api/subcategories/<int:category_id>')
 def get_subcategories(category_id):
     """API endpoint to get subcategories for a given category"""
     conn = get_db_connection()
     subcategories = conn.execute(
-        'SELECT * FROM subcategories WHERE category_id = ? ORDER BY name',
+        'SELECT * FROM subcategories WHERE category_id = %s ORDER BY name',
         (category_id,)
     ).fetchall()
     conn.close()
@@ -326,6 +319,8 @@ def get_subcategories(category_id):
 # QUICK ADD API ENDPOINTS
 # ============================================================================
 
+
+
 @app.route('/api/quick-add/source', methods=['POST'])
 def quick_add_source():
     """Quick add a source from expense entry"""
@@ -340,13 +335,13 @@ def quick_add_source():
         conn = get_db_connection()
         
         # Check if exists
-        existing = conn.execute('SELECT id FROM sources WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM sources WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return jsonify({'success': False, 'error': f'Source "{name}" already exists'})
         
         # Insert
-        cursor = conn.execute('INSERT INTO sources (name, type) VALUES (?, ?)', 
+        cursor = conn.execute('INSERT INTO sources (name, type) VALUES (%s, %s)', 
                              (name, source_type if source_type else None))
         new_id = cursor.lastrowid
         conn.commit()
@@ -356,6 +351,8 @@ def quick_add_source():
     except Exception as e:
         print(f'Error in quick_add_source: {e}')
         return jsonify({'success': False, 'error': 'Failed to add source'})
+
+
 
 @app.route('/api/quick-add/category', methods=['POST'])
 def quick_add_category():
@@ -371,13 +368,13 @@ def quick_add_category():
         conn = get_db_connection()
         
         # Check if exists
-        existing = conn.execute('SELECT id FROM categories WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM categories WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return jsonify({'success': False, 'error': f'Category "{name}" already exists'})
         
         # Insert
-        cursor = conn.execute('INSERT INTO categories (name, color) VALUES (?, ?)', (name, color))
+        cursor = conn.execute('INSERT INTO categories (name, color) VALUES (%s, %s)', (name, color))
         new_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -386,6 +383,8 @@ def quick_add_category():
     except Exception as e:
         print(f'Error in quick_add_category: {e}')
         return jsonify({'success': False, 'error': 'Failed to add category'})
+
+
 
 @app.route('/api/quick-add/subcategory', methods=['POST'])
 def quick_add_subcategory():
@@ -405,7 +404,7 @@ def quick_add_subcategory():
         
         # Check if exists in this category
         existing = conn.execute(
-            'SELECT id FROM subcategories WHERE name = ? AND category_id = ?', 
+            'SELECT id FROM subcategories WHERE name = %s AND category_id = %s', 
             (name, category_id)
         ).fetchone()
         if existing:
@@ -413,7 +412,7 @@ def quick_add_subcategory():
             return jsonify({'success': False, 'error': f'Subcategory "{name}" already exists in this category'})
         
         # Insert
-        cursor = conn.execute('INSERT INTO subcategories (category_id, name) VALUES (?, ?)', 
+        cursor = conn.execute('INSERT INTO subcategories (category_id, name) VALUES (%s, %s)', 
                              (category_id, name))
         new_id = cursor.lastrowid
         conn.commit()
@@ -423,6 +422,8 @@ def quick_add_subcategory():
     except Exception as e:
         print(f'Error in quick_add_subcategory: {e}')
         return jsonify({'success': False, 'error': 'Failed to add subcategory'})
+
+
 
 @app.route('/api/quick-add/vendor', methods=['POST'])
 def quick_add_vendor():
@@ -437,13 +438,13 @@ def quick_add_vendor():
         conn = get_db_connection()
         
         # Check if exists
-        existing = conn.execute('SELECT id FROM vendors WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM vendors WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return jsonify({'success': False, 'error': f'Vendor "{name}" already exists'})
         
         # Insert
-        cursor = conn.execute('INSERT INTO vendors (name) VALUES (?)', (name,))
+        cursor = conn.execute('INSERT INTO vendors (name) VALUES (%s)', (name,))
         new_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -452,6 +453,8 @@ def quick_add_vendor():
     except Exception as e:
         print(f'Error in quick_add_vendor: {e}')
         return jsonify({'success': False, 'error': 'Failed to add vendor'})
+
+
 
 @app.route('/expenses/add', methods=['POST'])
 def add_expense():
@@ -518,13 +521,13 @@ def add_expense():
         
         # Auto-update debt balance if source matches a credit card debt
         # Get source name
-        source = conn.execute('SELECT name FROM sources WHERE id = ?', (source_id,)).fetchone()
+        source = conn.execute('SELECT name FROM sources WHERE id = %s', (source_id,)).fetchone()
         if source:
             source_name = source['name']
             
             # Check if there's an active debt with matching name (case-insensitive)
             debt = conn.execute(
-                'SELECT id, current_balance FROM debts WHERE LOWER(name) = LOWER(?) AND is_active = 1',
+                'SELECT id, current_balance FROM debts WHERE LOWER(name) = LOWER(%s) AND is_active = 1',
                 (source_name,)
             ).fetchone()
             
@@ -532,7 +535,7 @@ def add_expense():
                 # Update debt balance - increase by expense amount
                 new_balance = debt['current_balance'] + amount
                 conn.execute(
-                    'UPDATE debts SET current_balance = ? WHERE id = ?',
+                    'UPDATE debts SET current_balance = %s WHERE id = %s',
                     (new_balance, debt['id'])
                 )
                 print(f"Auto-updated debt '{source_name}': ${debt['current_balance']:.2f} → ${new_balance:.2f} (+${amount:.2f})")
@@ -548,6 +551,8 @@ def add_expense():
         return redirect(url_for('add_expense_page'))
 
 @login_required
+
+
 @app.route('/expenses/delete/<int:expense_id>', methods=['POST'])
 def delete_expense(expense_id):
     """Delete an expense"""
@@ -558,7 +563,7 @@ def delete_expense(expense_id):
         SELECT e.amount, s.name as source_name
         FROM expenses e
         LEFT JOIN sources s ON e.source_id = s.id
-        WHERE e.id = ?
+        WHERE e.id = %s
     ''', (expense_id,)).fetchone()
     
     if expense:
@@ -572,13 +577,13 @@ def delete_expense(expense_id):
             # Decrease debt balance since we're removing the charge
             new_balance = debt['current_balance'] - expense['amount']
             conn.execute(
-                'UPDATE debts SET current_balance = ? WHERE id = ?',
+                'UPDATE debts SET current_balance = %s WHERE id = %s',
                 (new_balance, debt['id'])
             )
             print(f"Auto-updated debt '{expense['source_name']}': ${debt['current_balance']:.2f} → ${new_balance:.2f} (-${expense['amount']:.2f})")
     
     # Get expense to check for receipt file
-    expense_to_delete = conn.execute('SELECT receipt_path FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    expense_to_delete = conn.execute('SELECT receipt_path FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     
     # Delete receipt file if exists
     if expense_to_delete and expense_to_delete['receipt_path']:
@@ -587,20 +592,22 @@ def delete_expense(expense_id):
             print(f"Deleted receipt file: {expense_to_delete['receipt_path']}")
     
     # Check if this is a parent of split transactions
-    is_parent = conn.execute('SELECT is_split FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    is_parent = conn.execute('SELECT is_split FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     
     if is_parent and is_parent['is_split'] == 1:
         # Delete all children first
-        conn.execute('DELETE FROM expenses WHERE parent_transaction_id = ?', (expense_id,))
+        conn.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
         print(f"Deleted child splits for parent {expense_id}")
     
     # Delete the expense itself
-    conn.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+    conn.execute('DELETE FROM expenses WHERE id = %s', (expense_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('view_expenses'))
 
 @login_required
+
+
 @app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
 def edit_expense(expense_id):
     """Edit an existing expense"""
@@ -609,7 +616,7 @@ def edit_expense(expense_id):
     if request.method == 'POST':
         try:
             # Fetch current expense for receipt_path and is_split
-            current_expense = conn.execute("SELECT receipt_path, is_split FROM expenses WHERE id = ?", (expense_id,)).fetchone()
+            current_expense = conn.execute("SELECT receipt_path, is_split FROM expenses WHERE id = %s", (expense_id,)).fetchone()
 
             date = request.form['date']
             source_id = request.form['source_id']
@@ -661,18 +668,18 @@ def edit_expense(expense_id):
             
             conn.execute('''
                 UPDATE expenses 
-                SET date=?, source_id=?, description=?, category_id=?, 
-                    subcategory_id=?, vendor_id=?, amount=?, notes=?,
-                    taxable=?, tax_rate_id=?, subtotal=?, tax_amount=?, receipt_path=?,
-                    is_reimbursable=?, is_reimbursed=?
-                WHERE id=?
+                SET date=%s, source_id=%s, description=%s, category_id=%s, 
+                    subcategory_id=%s, vendor_id=%s, amount=%s, notes=%s,
+                    taxable=%s, tax_rate_id=%s, subtotal=%s, tax_amount=%s, receipt_path=%s,
+                    is_reimbursable=%s, is_reimbursed=%s
+                WHERE id=%s
             ''', (date, source_id, description, category_id, subcategory_id,
                   vendor_id, amount, notes, taxable, tax_rate_id, subtotal, tax_amount, receipt_path,
                   is_reimbursable, is_reimbursed, expense_id))
             
             # If this is a split parent, update all children dates too
             if current_expense and current_expense['is_split'] == 1:
-                conn.execute('''UPDATE expenses SET date = ? WHERE parent_transaction_id = ?''',
+                conn.execute('''UPDATE expenses SET date = %s WHERE parent_transaction_id = %s''',
                            (date, expense_id))
                 print(f"DEBUG: Updated child dates for parent {expense_id}")
             
@@ -686,14 +693,14 @@ def edit_expense(expense_id):
     
     # GET request - show edit form
     expense = conn.execute(
-        'SELECT * FROM expenses WHERE id = ?', 
+        'SELECT * FROM expenses WHERE id = %s', 
         (expense_id,)
     ).fetchone()
     
     sources = conn.execute('SELECT * FROM sources ORDER BY name').fetchall()
     categories = conn.execute('SELECT * FROM categories ORDER BY name').fetchall()
     subcategories = conn.execute(
-        'SELECT * FROM subcategories WHERE category_id = ? ORDER BY name',
+        'SELECT * FROM subcategories WHERE category_id = %s ORDER BY name',
         (expense['category_id'],)
     ).fetchall()
     vendors = conn.execute('SELECT * FROM vendors ORDER BY name').fetchall()
@@ -712,6 +719,8 @@ def edit_expense(expense_id):
                          tax_rates=tax_rates)
 
 @login_required
+
+
 @app.route('/manage')
 def manage():
     """Manage categories, subcategories, vendors, and sources"""
@@ -743,6 +752,8 @@ def manage():
                          income_categories=income_categories)
 
 @login_required
+
+
 @app.route('/manage/sources')
 def manage_sources():
     """Manage sources page"""
@@ -768,6 +779,8 @@ def manage_sources():
                          error=error)
 
 @login_required
+
+
 @app.route('/manage/sources/add', methods=['POST'])
 def add_source():
     """Add a new source"""
@@ -781,13 +794,13 @@ def add_source():
         conn = get_db_connection()
         
         # Check if source already exists
-        existing = conn.execute('SELECT id FROM sources WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM sources WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return redirect(url_for('manage_sources', error=f'Source "{name}" already exists'))
         
         # Insert new source
-        conn.execute('INSERT INTO sources (name, type) VALUES (?, ?)', 
+        conn.execute('INSERT INTO sources (name, type) VALUES (%s, %s)', 
                     (name, source_type if source_type else None))
         conn.commit()
         conn.close()
@@ -798,6 +811,8 @@ def add_source():
         return redirect(url_for('manage_sources', error='Failed to add source'))
 
 @login_required
+
+
 @app.route('/manage/sources/edit', methods=['POST'])
 def edit_source():
     """Edit an existing source"""
@@ -813,7 +828,7 @@ def edit_source():
         
         # Check if another source has this name
         existing = conn.execute(
-            'SELECT id FROM sources WHERE name = ? AND id != ?', 
+            'SELECT id FROM sources WHERE name = %s AND id != %s', 
             (name, source_id)
         ).fetchone()
         if existing:
@@ -821,7 +836,7 @@ def edit_source():
             return redirect(url_for('manage_sources', error=f'Another source named "{name}" already exists'))
         
         # Update source
-        conn.execute('UPDATE sources SET name = ?, type = ? WHERE id = ?',
+        conn.execute('UPDATE sources SET name = %s, type = %s WHERE id = %s',
                     (name, source_type if source_type else None, source_id))
         conn.commit()
         conn.close()
@@ -832,6 +847,8 @@ def edit_source():
         return redirect(url_for('manage_sources', error='Failed to update source'))
 
 @login_required
+
+
 @app.route('/manage/sources/delete/<int:source_id>', methods=['POST'])
 def delete_source(source_id):
     """Delete a source"""
@@ -840,7 +857,7 @@ def delete_source(source_id):
         
         # Get source name and check if it's being used
         source = conn.execute(
-            'SELECT name FROM sources WHERE id = ?', 
+            'SELECT name FROM sources WHERE id = %s', 
             (source_id,)
         ).fetchone()
         
@@ -849,7 +866,7 @@ def delete_source(source_id):
             return redirect(url_for('manage_sources', error='Source not found'))
         
         expense_count = conn.execute(
-            'SELECT COUNT(*) as count FROM expenses WHERE source_id = ?',
+            'SELECT COUNT(*) as count FROM expenses WHERE source_id = %s',
             (source_id,)
         ).fetchone()['count']
         
@@ -859,7 +876,7 @@ def delete_source(source_id):
                 error=f'Cannot delete "{source["name"]}" - it is being used by {expense_count} expense(s). Reassign or delete those expenses first.'))
         
         # Delete the source
-        conn.execute('DELETE FROM sources WHERE id = ?', (source_id,))
+        conn.execute('DELETE FROM sources WHERE id = %s', (source_id,))
         conn.commit()
         conn.close()
         
@@ -869,6 +886,8 @@ def delete_source(source_id):
         return redirect(url_for('manage_sources', error='Failed to delete source'))
 
 @login_required
+
+
 @app.route('/manage/categories')
 def manage_categories():
     """Manage categories page"""
@@ -897,6 +916,8 @@ def manage_categories():
                          error=error)
 
 @login_required
+
+
 @app.route('/manage/categories/add', methods=['POST'])
 def add_category():
     """Add a new category"""
@@ -913,13 +934,13 @@ def add_category():
         conn = get_db_connection()
         
         # Check if category already exists
-        existing = conn.execute('SELECT id FROM categories WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM categories WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return redirect(url_for('manage_categories', error=f'Category "{name}" already exists'))
         
         # Insert new category
-        conn.execute('INSERT INTO categories (name, color) VALUES (?, ?)', (name, color))
+        conn.execute('INSERT INTO categories (name, color) VALUES (%s, %s)', (name, color))
         conn.commit()
         conn.close()
         
@@ -929,6 +950,8 @@ def add_category():
         return redirect(url_for('manage_categories', error='Failed to add category'))
 
 @login_required
+
+
 @app.route('/manage/categories/edit', methods=['POST'])
 def edit_category():
     """Edit an existing category"""
@@ -947,7 +970,7 @@ def edit_category():
         
         # Check if another category has this name
         existing = conn.execute(
-            'SELECT id FROM categories WHERE name = ? AND id != ?', 
+            'SELECT id FROM categories WHERE name = %s AND id != %s', 
             (name, category_id)
         ).fetchone()
         if existing:
@@ -955,7 +978,7 @@ def edit_category():
             return redirect(url_for('manage_categories', error=f'Another category named "{name}" already exists'))
         
         # Update category
-        conn.execute('UPDATE categories SET name = ?, color = ? WHERE id = ?',
+        conn.execute('UPDATE categories SET name = %s, color = %s WHERE id = %s',
                     (name, color, category_id))
         conn.commit()
         conn.close()
@@ -966,6 +989,8 @@ def edit_category():
         return redirect(url_for('manage_categories', error='Failed to update category'))
 
 @login_required
+
+
 @app.route('/manage/categories/delete/<int:category_id>', methods=['POST'])
 def delete_category(category_id):
     """Delete a category"""
@@ -974,7 +999,7 @@ def delete_category(category_id):
         
         # Get category name and check if it's being used
         category = conn.execute(
-            'SELECT name FROM categories WHERE id = ?', 
+            'SELECT name FROM categories WHERE id = %s', 
             (category_id,)
         ).fetchone()
         
@@ -984,13 +1009,13 @@ def delete_category(category_id):
         
         # Check for subcategories
         subcategory_count = conn.execute(
-            'SELECT COUNT(*) as count FROM subcategories WHERE category_id = ?',
+            'SELECT COUNT(*) as count FROM subcategories WHERE category_id = %s',
             (category_id,)
         ).fetchone()['count']
         
         # Check for expenses
         expense_count = conn.execute(
-            'SELECT COUNT(*) as count FROM expenses WHERE category_id = ?',
+            'SELECT COUNT(*) as count FROM expenses WHERE category_id = %s',
             (category_id,)
         ).fetchone()['count']
         
@@ -1006,7 +1031,7 @@ def delete_category(category_id):
             return redirect(url_for('manage_categories', error=error_msg))
         
         # Delete the category
-        conn.execute('DELETE FROM categories WHERE id = ?', (category_id,))
+        conn.execute('DELETE FROM categories WHERE id = %s', (category_id,))
         conn.commit()
         conn.close()
         
@@ -1016,6 +1041,8 @@ def delete_category(category_id):
         return redirect(url_for('manage_categories', error='Failed to delete category'))
 
 @login_required
+
+
 @app.route('/manage/vendors')
 def manage_vendors():
     """Manage vendors page"""
@@ -1049,6 +1076,8 @@ def manage_vendors():
                          error=error)
 
 @login_required
+
+
 @app.route('/manage/vendors/add', methods=['POST'])
 def add_vendor():
     """Add a new vendor"""
@@ -1066,13 +1095,13 @@ def add_vendor():
         conn = get_db_connection()
         
         # Check if vendor already exists
-        existing = conn.execute('SELECT id FROM vendors WHERE name = ?', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM vendors WHERE name = %s', (name,)).fetchone()
         if existing:
             conn.close()
             return redirect(url_for('manage_vendors', error=f'Vendor "{name}" already exists'))
         
         # Insert new vendor
-        conn.execute('INSERT INTO vendors (name, default_category_id) VALUES (?, ?)', 
+        conn.execute('INSERT INTO vendors (name, default_category_id) VALUES (%s, %s)', 
                     (name, default_category_id))
         conn.commit()
         conn.close()
@@ -1083,6 +1112,8 @@ def add_vendor():
         return redirect(url_for('manage_vendors', error='Failed to add vendor'))
 
 @login_required
+
+
 @app.route('/manage/vendors/edit', methods=['POST'])
 def edit_vendor():
     """Edit an existing vendor"""
@@ -1102,7 +1133,7 @@ def edit_vendor():
         
         # Check if another vendor has this name
         existing = conn.execute(
-            'SELECT id FROM vendors WHERE name = ? AND id != ?', 
+            'SELECT id FROM vendors WHERE name = %s AND id != %s', 
             (name, vendor_id)
         ).fetchone()
         if existing:
@@ -1110,7 +1141,7 @@ def edit_vendor():
             return redirect(url_for('manage_vendors', error=f'Another vendor named "{name}" already exists'))
         
         # Update vendor
-        conn.execute('UPDATE vendors SET name = ?, default_category_id = ? WHERE id = ?',
+        conn.execute('UPDATE vendors SET name = %s, default_category_id = %s WHERE id = %s',
                     (name, default_category_id, vendor_id))
         conn.commit()
         conn.close()
@@ -1121,6 +1152,8 @@ def edit_vendor():
         return redirect(url_for('manage_vendors', error='Failed to update vendor'))
 
 @login_required
+
+
 @app.route('/manage/vendors/delete/<int:vendor_id>', methods=['POST'])
 def delete_vendor(vendor_id):
     """Delete a vendor"""
@@ -1129,7 +1162,7 @@ def delete_vendor(vendor_id):
         
         # Get vendor name and check if it's being used
         vendor = conn.execute(
-            'SELECT name FROM vendors WHERE id = ?', 
+            'SELECT name FROM vendors WHERE id = %s', 
             (vendor_id,)
         ).fetchone()
         
@@ -1138,7 +1171,7 @@ def delete_vendor(vendor_id):
             return redirect(url_for('manage_vendors', error='Vendor not found'))
         
         expense_count = conn.execute(
-            'SELECT COUNT(*) as count FROM expenses WHERE vendor_id = ?',
+            'SELECT COUNT(*) as count FROM expenses WHERE vendor_id = %s',
             (vendor_id,)
         ).fetchone()['count']
         
@@ -1148,7 +1181,7 @@ def delete_vendor(vendor_id):
                 error=f'Cannot delete "{vendor["name"]}" - it is being used by {expense_count} expense(s). Reassign or delete those expenses first.'))
         
         # Delete the vendor
-        conn.execute('DELETE FROM vendors WHERE id = ?', (vendor_id,))
+        conn.execute('DELETE FROM vendors WHERE id = %s', (vendor_id,))
         conn.commit()
         conn.close()
         
@@ -1158,6 +1191,8 @@ def delete_vendor(vendor_id):
         return redirect(url_for('manage_vendors', error='Failed to delete vendor'))
 
 @login_required
+
+
 @app.route('/manage/subcategories')
 def manage_subcategories():
     """Manage subcategories page"""
@@ -1188,6 +1223,8 @@ def manage_subcategories():
                          error=error)
 
 @login_required
+
+
 @app.route('/manage/subcategories/add', methods=['POST'])
 def add_subcategory():
     """Add a new subcategory"""
@@ -1205,18 +1242,18 @@ def add_subcategory():
         
         # Check if subcategory already exists in this category
         existing = conn.execute(
-            'SELECT id FROM subcategories WHERE name = ? AND category_id = ?', 
+            'SELECT id FROM subcategories WHERE name = %s AND category_id = %s', 
             (name, category_id)
         ).fetchone()
         if existing:
             # Get category name for error message
-            category = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+            category = conn.execute('SELECT name FROM categories WHERE id = %s', (category_id,)).fetchone()
             conn.close()
             return redirect(url_for('manage_subcategories', 
                 error=f'Subcategory "{name}" already exists in {category["name"]}'))
         
         # Insert new subcategory
-        conn.execute('INSERT INTO subcategories (category_id, name) VALUES (?, ?)', 
+        conn.execute('INSERT INTO subcategories (category_id, name) VALUES (%s, %s)', 
                     (category_id, name))
         conn.commit()
         conn.close()
@@ -1227,6 +1264,8 @@ def add_subcategory():
         return redirect(url_for('manage_subcategories', error='Failed to add subcategory'))
 
 @login_required
+
+
 @app.route('/manage/subcategories/edit', methods=['POST'])
 def edit_subcategory():
     """Edit an existing subcategory"""
@@ -1245,17 +1284,17 @@ def edit_subcategory():
         
         # Check if another subcategory in this category has this name
         existing = conn.execute(
-            'SELECT id FROM subcategories WHERE name = ? AND category_id = ? AND id != ?', 
+            'SELECT id FROM subcategories WHERE name = %s AND category_id = %s AND id != %s', 
             (name, category_id, subcategory_id)
         ).fetchone()
         if existing:
-            category = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+            category = conn.execute('SELECT name FROM categories WHERE id = %s', (category_id,)).fetchone()
             conn.close()
             return redirect(url_for('manage_subcategories', 
                 error=f'Another subcategory named "{name}" already exists in {category["name"]}'))
         
         # Update subcategory
-        conn.execute('UPDATE subcategories SET category_id = ?, name = ? WHERE id = ?',
+        conn.execute('UPDATE subcategories SET category_id = %s, name = %s WHERE id = %s',
                     (category_id, name, subcategory_id))
         conn.commit()
         conn.close()
@@ -1266,6 +1305,8 @@ def edit_subcategory():
         return redirect(url_for('manage_subcategories', error='Failed to update subcategory'))
 
 @login_required
+
+
 @app.route('/manage/subcategories/delete/<int:subcategory_id>', methods=['POST'])
 def delete_subcategory(subcategory_id):
     """Delete a subcategory"""
@@ -1274,7 +1315,7 @@ def delete_subcategory(subcategory_id):
         
         # Get subcategory name and check if it's being used
         subcategory = conn.execute(
-            'SELECT name FROM subcategories WHERE id = ?', 
+            'SELECT name FROM subcategories WHERE id = %s', 
             (subcategory_id,)
         ).fetchone()
         
@@ -1283,7 +1324,7 @@ def delete_subcategory(subcategory_id):
             return redirect(url_for('manage_subcategories', error='Subcategory not found'))
         
         expense_count = conn.execute(
-            'SELECT COUNT(*) as count FROM expenses WHERE subcategory_id = ?',
+            'SELECT COUNT(*) as count FROM expenses WHERE subcategory_id = %s',
             (subcategory_id,)
         ).fetchone()['count']
         
@@ -1293,7 +1334,7 @@ def delete_subcategory(subcategory_id):
                 error=f'Cannot delete "{subcategory["name"]}" - it is being used by {expense_count} expense(s). Reassign or delete those expenses first.'))
         
         # Delete the subcategory
-        conn.execute('DELETE FROM subcategories WHERE id = ?', (subcategory_id,))
+        conn.execute('DELETE FROM subcategories WHERE id = %s', (subcategory_id,))
         conn.commit()
         conn.close()
         
@@ -1307,6 +1348,8 @@ def delete_subcategory(subcategory_id):
 # ============================================================================
 
 @login_required
+
+
 @app.route('/debt-tracker')
 def debt_tracker():
     """Debt tracker page - individual debt management"""
@@ -1325,7 +1368,7 @@ def debt_tracker():
     end_date = request.args.get('end_date', '')
     
     if debt_id:
-        selected_debt = conn.execute('SELECT * FROM debts WHERE id = ?', (debt_id,)).fetchone()
+        selected_debt = conn.execute('SELECT * FROM debts WHERE id = %s', (debt_id,)).fetchone()
         
         if selected_debt:
             # Calculate next due date
@@ -1364,27 +1407,27 @@ def debt_tracker():
                 selected_debt = selected_debt_dict
             
             # Build date filter
-            where_clauses = ['debt_id = ?']
+            where_clauses = ['debt_id = %s']
             params = [debt_id]
             
             today = datetime.now().date()
             if filter_period == 'wtd':
                 start_of_week = today - timedelta(days=today.weekday())
-                where_clauses.append('payment_date >= ?')
+                where_clauses.append('payment_date >= %s')
                 params.append(start_of_week.isoformat())
             elif filter_period == 'mtd':
                 start_of_month = today.replace(day=1)
-                where_clauses.append('payment_date >= ?')
+                where_clauses.append('payment_date >= %s')
                 params.append(start_of_month.isoformat())
             elif filter_period == 'ytd':
                 start_of_year = today.replace(month=1, day=1)
-                where_clauses.append('payment_date >= ?')
+                where_clauses.append('payment_date >= %s')
                 params.append(start_of_year.isoformat())
             elif filter_period == 'custom' and start_date:
-                where_clauses.append('payment_date >= ?')
+                where_clauses.append('payment_date >= %s')
                 params.append(start_date)
                 if end_date:
-                    where_clauses.append('payment_date <= ?')
+                    where_clauses.append('payment_date <= %s')
                     params.append(end_date)
             
             where_sql = ' AND '.join(where_clauses)
@@ -1427,6 +1470,8 @@ def debt_tracker():
                          end_date=end_date)
 
 @login_required
+
+
 @app.route('/debt-tracker/add-debt', methods=['POST'])
 def add_debt():
     """Add a new debt"""
@@ -1447,7 +1492,7 @@ def add_debt():
         conn = get_db_connection()
         
         # Check if active debt already exists
-        existing = conn.execute('SELECT id FROM debts WHERE name = ? AND is_active = 1', (name,)).fetchone()
+        existing = conn.execute('SELECT id FROM debts WHERE name = %s AND is_active = 1', (name,)).fetchone()
         if existing:
             conn.close()
             return redirect(url_for('debt_tracker', error=f'Debt "{name}" already exists'))
@@ -1455,7 +1500,7 @@ def add_debt():
         # Insert new debt
         cursor = conn.execute('''
             INSERT INTO debts (name, starting_balance, current_balance, interest_rate, minimum_payment, due_day)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         ''', (name, starting_balance, starting_balance, interest_rate, minimum_payment, due_day))
         
         new_debt_id = cursor.lastrowid
@@ -1468,6 +1513,8 @@ def add_debt():
         return redirect(url_for('debt_tracker', error='Failed to add debt'))
 
 @login_required
+
+
 @app.route('/debt-tracker/edit-debt', methods=['POST'])
 def edit_debt():
     """Edit an existing debt"""
@@ -1489,7 +1536,7 @@ def edit_debt():
         
         # Check if another debt has this name
         existing = conn.execute(
-            'SELECT id FROM debts WHERE name = ? AND id != ?',
+            'SELECT id FROM debts WHERE name = %s AND id != %s',
             (name, debt_id)
         ).fetchone()
         if existing:
@@ -1499,13 +1546,13 @@ def edit_debt():
         # Update debt
         conn.execute('''
             UPDATE debts 
-            SET name = ?, 
-                starting_balance = ?, 
-                current_balance = ?,
-                interest_rate = ?, 
-                minimum_payment = ?, 
-                due_day = ?
-            WHERE id = ?
+            SET name = %s, 
+                starting_balance = %s, 
+                current_balance = %s,
+                interest_rate = %s, 
+                minimum_payment = %s, 
+                due_day = %s
+            WHERE id = %s
         ''', (name, starting_balance, starting_balance, interest_rate, minimum_payment, due_day, debt_id))
         conn.commit()
         conn.close()
@@ -1516,6 +1563,8 @@ def edit_debt():
         return redirect(url_for('debt_tracker', error='Failed to update debt'))
 
 @login_required
+
+
 @app.route('/debt-tracker/add-payment', methods=['POST'])
 def add_payment():
     """Add a payment to a debt"""
@@ -1532,7 +1581,7 @@ def add_payment():
         conn = get_db_connection()
         
         # Get current debt balance
-        debt = conn.execute('SELECT current_balance FROM debts WHERE id = ?', (debt_id,)).fetchone()
+        debt = conn.execute('SELECT current_balance FROM debts WHERE id = %s', (debt_id,)).fetchone()
         if not debt:
             conn.close()
             return redirect(url_for('debt_tracker', error='Debt not found'))
@@ -1550,11 +1599,11 @@ def add_payment():
         # Insert payment
         conn.execute('''
             INSERT INTO debt_payments (debt_id, payment_date, amount_paid, interest_charged, principal_paid, balance_after, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         ''', (debt_id, payment_date, amount_paid, interest_charged, principal_paid, new_balance, notes))
         
         # Update debt current_balance
-        conn.execute('UPDATE debts SET current_balance = ? WHERE id = ?', (new_balance, debt_id))
+        conn.execute('UPDATE debts SET current_balance = %s WHERE id = %s', (new_balance, debt_id))
         
         conn.commit()
         conn.close()
@@ -1565,6 +1614,8 @@ def add_payment():
         return redirect(url_for('debt_tracker', error='Failed to add payment'))
 
 @login_required
+
+
 @app.route('/debt-tracker/edit-payment', methods=['POST'])
 def edit_payment():
     """Edit an existing payment"""
@@ -1581,7 +1632,7 @@ def edit_payment():
         conn = get_db_connection()
         
         # Get the payment and debt info
-        payment = conn.execute('SELECT debt_id, balance_after FROM debt_payments WHERE id = ?', (payment_id,)).fetchone()
+        payment = conn.execute('SELECT debt_id, balance_after FROM debt_payments WHERE id = %s', (payment_id,)).fetchone()
         if not payment:
             conn.close()
             return redirect(url_for('debt_tracker', error='Payment not found'))
@@ -1592,7 +1643,7 @@ def edit_payment():
         # Get balance before this payment
         previous_payment = conn.execute('''
             SELECT balance_after FROM debt_payments
-            WHERE debt_id = ? AND payment_date < ?
+            WHERE debt_id = %s AND payment_date < %s
             ORDER BY payment_date DESC, created_at DESC
             LIMIT 1
         ''', (debt_id, payment_date)).fetchone()
@@ -1601,7 +1652,7 @@ def edit_payment():
             balance_before = previous_payment['balance_after']
         else:
             # This is the first payment, use starting balance
-            debt = conn.execute('SELECT starting_balance FROM debts WHERE id = ?', (debt_id,)).fetchone()
+            debt = conn.execute('SELECT starting_balance FROM debts WHERE id = %s', (debt_id,)).fetchone()
             balance_before = debt['starting_balance']
         
         # Calculate new values
@@ -1614,20 +1665,20 @@ def edit_payment():
         # Update payment
         conn.execute('''
             UPDATE debt_payments
-            SET payment_date = ?, amount_paid = ?, interest_charged = ?, principal_paid = ?, balance_after = ?, notes = ?
-            WHERE id = ?
+            SET payment_date = %s, amount_paid = %s, interest_charged = %s, principal_paid = %s, balance_after = %s, notes = %s
+            WHERE id = %s
         ''', (payment_date, amount_paid, interest_charged, principal_paid, new_balance_after, notes, payment_id))
         
         # Update debt current_balance (if this was the most recent payment)
         latest_payment = conn.execute('''
             SELECT id, balance_after FROM debt_payments
-            WHERE debt_id = ?
+            WHERE debt_id = %s
             ORDER BY payment_date DESC, created_at DESC
             LIMIT 1
         ''', (debt_id,)).fetchone()
         
         if latest_payment['id'] == int(payment_id):
-            conn.execute('UPDATE debts SET current_balance = ? WHERE id = ?', (new_balance_after, debt_id))
+            conn.execute('UPDATE debts SET current_balance = %s WHERE id = %s', (new_balance_after, debt_id))
         
         conn.commit()
         conn.close()
@@ -1638,6 +1689,8 @@ def edit_payment():
         return redirect(url_for('debt_tracker', error='Failed to update payment'))
 
 @login_required
+
+
 @app.route('/debt-tracker/delete-payment/<int:payment_id>', methods=['POST'])
 def delete_payment(payment_id):
     """Delete a payment"""
@@ -1645,7 +1698,7 @@ def delete_payment(payment_id):
         conn = get_db_connection()
         
         # Get payment info
-        payment = conn.execute('SELECT debt_id FROM debt_payments WHERE id = ?', (payment_id,)).fetchone()
+        payment = conn.execute('SELECT debt_id FROM debt_payments WHERE id = %s', (payment_id,)).fetchone()
         if not payment:
             conn.close()
             return redirect(url_for('debt_tracker', error='Payment not found'))
@@ -1653,12 +1706,12 @@ def delete_payment(payment_id):
         debt_id = payment['debt_id']
         
         # Delete payment
-        conn.execute('DELETE FROM debt_payments WHERE id = ?', (payment_id,))
+        conn.execute('DELETE FROM debt_payments WHERE id = %s', (payment_id,))
         
         # Recalculate current balance from most recent payment
         latest_payment = conn.execute('''
             SELECT balance_after FROM debt_payments
-            WHERE debt_id = ?
+            WHERE debt_id = %s
             ORDER BY payment_date DESC, created_at DESC
             LIMIT 1
         ''', (debt_id,)).fetchone()
@@ -1667,10 +1720,10 @@ def delete_payment(payment_id):
             new_balance = latest_payment['balance_after']
         else:
             # No more payments, reset to starting balance
-            debt = conn.execute('SELECT starting_balance FROM debts WHERE id = ?', (debt_id,)).fetchone()
+            debt = conn.execute('SELECT starting_balance FROM debts WHERE id = %s', (debt_id,)).fetchone()
             new_balance = debt['starting_balance']
         
-        conn.execute('UPDATE debts SET current_balance = ? WHERE id = ?', (new_balance, debt_id))
+        conn.execute('UPDATE debts SET current_balance = %s WHERE id = %s', (new_balance, debt_id))
         
         conn.commit()
         conn.close()
@@ -1681,6 +1734,8 @@ def delete_payment(payment_id):
         return redirect(url_for('debt_tracker', error='Failed to delete payment'))
 
 @login_required
+
+
 @app.route('/debt-payoff')
 def debt_payoff():
     """Debt payoff strategy comparison page"""
@@ -1881,6 +1936,8 @@ def calculate_payoff_timeline(debts, extra_payment):
 # ============================================================================
 
 @login_required
+
+
 @app.route('/log-payment', methods=['GET', 'POST'])
 def log_payment():
     """Log a debt payment"""
@@ -1896,14 +1953,14 @@ def log_payment():
         # Insert payment
         conn.execute('''
             INSERT INTO payment_history (debt_id, payment_date, amount_paid, payment_type, notes)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         ''', (debt_id, payment_date, amount_paid, payment_type, notes))
         
         # Update debt balance
         conn.execute('''
             UPDATE debts 
-            SET current_balance = current_balance - ?
-            WHERE id = ?
+            SET current_balance = current_balance - %s
+            WHERE id = %s
         ''', (amount_paid, debt_id))
         
         conn.commit()
@@ -1926,6 +1983,8 @@ def log_payment():
     return render_template('log_payment.html', debts=debts, today=today)
 
 @login_required
+
+
 @app.route('/payment-history')
 def payment_history():
     """View payment history"""
@@ -1956,16 +2015,18 @@ def payment_history():
     return render_template('payment_history.html', payments=payments, debt_summaries=debt_summaries)
 
 @login_required
+
+
 @app.route('/delete-payment/<int:payment_id>', methods=['POST'])
 def delete_payment_history(payment_id):
     """Delete a payment"""
     conn = get_db_connection()
-    payment = conn.execute('SELECT debt_id, amount_paid FROM payment_history WHERE id = ?', (payment_id,)).fetchone()
+    payment = conn.execute('SELECT debt_id, amount_paid FROM payment_history WHERE id = %s', (payment_id,)).fetchone()
     
     if payment:
-        conn.execute('UPDATE debts SET current_balance = current_balance + ? WHERE id = ?', 
+        conn.execute('UPDATE debts SET current_balance = current_balance + %s WHERE id = %s', 
                     (payment['amount_paid'], payment['debt_id']))
-        conn.execute('DELETE FROM payment_history WHERE id = ?', (payment_id,))
+        conn.execute('DELETE FROM payment_history WHERE id = %s', (payment_id,))
         conn.commit()
     
     conn.close()
@@ -1976,6 +2037,8 @@ def delete_payment_history(payment_id):
 # ============================================================================
 
 @login_required
+
+
 @app.route('/budget')
 def budget():
     """View budget vs actual spending"""
@@ -1987,7 +2050,7 @@ def budget():
     # Get selected month/quarter/year
     from datetime import datetime
     today = datetime.today()
-    selected_month = request.args.get('month', today.strftime('%Y-%m'))
+    selected_month = request.args.get('month', today.to_char())
     selected_year = request.args.get('year', str(today.year))
     
     # Calculate date ranges based on view type
@@ -2039,7 +2102,7 @@ def budget():
             e.subcategory_id,
             SUM(e.amount) as total_spent
         FROM expenses e
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
         GROUP BY e.category_id, e.subcategory_id
     ''', (start_date, end_date)).fetchall()
     
@@ -2091,6 +2154,8 @@ def budget():
                          end_date=end_date)
 
 @login_required
+
+
 @app.route('/manage-budget')
 def manage_budget():
     """Manage budget amounts"""
@@ -2157,6 +2222,8 @@ def manage_budget():
                          income_budget_lookup=income_budget_lookup)
 
 @login_required
+
+
 @app.route('/save-budget', methods=['POST'])
 def save_budget():
     """Save or update budget amounts"""
@@ -2175,28 +2242,28 @@ def save_budget():
             else:  # subcat
                 subcategory_id = int(parts[2])
                 # Get category_id for this subcategory
-                subcat = conn.execute('SELECT category_id FROM subcategories WHERE id = ?', 
+                subcat = conn.execute('SELECT category_id FROM subcategories WHERE id = %s', 
                                     (subcategory_id,)).fetchone()
                 category_id = subcat['category_id']
             
             # Check if budget exists
             existing = conn.execute('''
                 SELECT id FROM budgets 
-                WHERE category_id = ? AND subcategory_id IS ?
+                WHERE category_id = %s AND subcategory_id IS %s
             ''', (category_id, subcategory_id)).fetchone()
             
             if existing:
                 # Update
                 conn.execute('''
                     UPDATE budgets 
-                    SET monthly_amount = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    SET monthly_amount = %s, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
                 ''', (amount, existing['id']))
             else:
                 # Insert
                 conn.execute('''
                     INSERT INTO budgets (category_id, subcategory_id, monthly_amount)
-                    VALUES (?, ?, ?)
+                    VALUES (%s, %s, %s)
                 ''', (category_id, subcategory_id, amount))
     
     conn.commit()
@@ -2206,6 +2273,8 @@ def save_budget():
 
 
 @login_required
+
+
 @app.route('/save-income-budget', methods=['POST'])
 def save_income_budget():
     """Save or update income budget amounts"""
@@ -2219,7 +2288,7 @@ def save_income_budget():
             
             # Check if income budget exists
             existing = conn.execute(
-                'SELECT id FROM income_budgets WHERE category = ?',
+                'SELECT id FROM income_budgets WHERE category = %s',
                 (category,)
             ).fetchone()
             
@@ -2227,15 +2296,15 @@ def save_income_budget():
                 # Update existing
                 conn.execute(
                     '''UPDATE income_budgets 
-                       SET monthly_amount = ?, updated_at = CURRENT_TIMESTAMP 
-                       WHERE id = ?''',
+                       SET monthly_amount = %s, updated_at = CURRENT_TIMESTAMP 
+                       WHERE id = %s''',
                     (amount, existing['id'])
                 )
             else:
                 # Create new
                 conn.execute(
                     '''INSERT INTO income_budgets (category, monthly_amount) 
-                       VALUES (?, ?)''',
+                       VALUES (%s, %s)''',
                     (category, amount)
                 )
     
@@ -2246,11 +2315,13 @@ def save_income_budget():
 
 
 @login_required
+
+
 @app.route('/delete-budget/<int:budget_id>', methods=['POST'])
 def delete_budget_item(budget_id):
     """Delete a budget"""
     conn = get_db_connection()
-    conn.execute('UPDATE budgets SET is_active = 0 WHERE id = ?', (budget_id,))
+    conn.execute('UPDATE budgets SET is_active = 0 WHERE id = %s', (budget_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('manage_budget'))
@@ -2258,11 +2329,13 @@ def delete_budget_item(budget_id):
 
 
 @login_required
+
+
 @app.route('/debt-tracker/delete/<int:debt_id>', methods=['POST'])
 def delete_debt_item(debt_id):
     """Delete a debt (soft delete)"""
     conn = get_db_connection()
-    conn.execute('UPDATE debts SET is_active = 0 WHERE id = ?', (debt_id,))
+    conn.execute('UPDATE debts SET is_active = 0 WHERE id = %s', (debt_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('debt_tracker'))
@@ -2276,6 +2349,8 @@ import csv
 from io import StringIO
 
 @login_required
+
+
 @app.route('/csv-import', methods=['GET', 'POST'])
 def csv_import():
     """CSV Import - Upload and column mapping"""
@@ -2376,6 +2451,8 @@ def csv_import():
                          subcategories=subcategories)
 
 @login_required
+
+
 @app.route('/csv-preview', methods=['POST'])
 def csv_preview():
     """Preview CSV data and check for duplicates"""
@@ -2506,6 +2583,8 @@ def csv_preview():
                          default_subcategory=default_subcategory)
 
 @login_required
+
+
 @app.route('/csv-do-import', methods=['POST'])
 def csv_do_import():
     """Actually import selected CSV rows"""
@@ -2538,7 +2617,7 @@ def csv_do_import():
             # Insert expense
             conn.execute('''
                 INSERT INTO expenses (date, description, amount, source_id, category_id, subcategory_id)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
             ''', (row['date'], row['description'], abs(row['amount']), 
                 source_id or None, category_id or None, subcategory_id or None))
             imported_count += 1
@@ -2561,6 +2640,8 @@ def csv_do_import():
 # ============================================================================
 
 @login_required
+
+
 @app.route('/income')
 def income():
     """View all income"""
@@ -2580,17 +2661,17 @@ def income():
     
     if filter_period == 'mtd':
         start_of_month = today.replace(day=1)
-        where_clauses.append('date >= ?')
+        where_clauses.append('date >= %s')
         params.append(start_of_month.isoformat())
     elif filter_period == 'ytd':
         start_of_year = today.replace(month=1, day=1)
-        where_clauses.append('date >= ?')
+        where_clauses.append('date >= %s')
         params.append(start_of_year.isoformat())
     elif filter_period == 'custom' and start_date:
-        where_clauses.append('date >= ?')
+        where_clauses.append('date >= %s')
         params.append(start_date)
         if end_date:
-            where_clauses.append('date <= ?')
+            where_clauses.append('date <= %s')
             params.append(end_date)
     
     where_sql = ' AND '.join(where_clauses) if where_clauses else '1=1'
@@ -2630,6 +2711,8 @@ def income():
                          end_date=end_date)
 
 @login_required
+
+
 @app.route('/add-income', methods=['GET', 'POST'])
 def add_income():
     """Add new income"""
@@ -2655,7 +2738,7 @@ def add_income():
                 INSERT INTO recurring_income (source, description, category,
                     amount, notes, frequency, day_of_week, day_of_month,
                     start_date, end_date, is_active)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 1)
             ''', (source, description, category, amount, notes,
                   recurring_frequency, recurring_day_of_week,
                   recurring_day_of_month, date, recurring_end_date))
@@ -2665,7 +2748,7 @@ def add_income():
         
         conn.execute('''
             INSERT INTO income (date, source, description, category, amount, notes, recurring_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         ''', (date, source, description, category, amount, notes, recurring_id))
         conn.commit()
         conn.close()
@@ -2687,6 +2770,8 @@ def add_income():
     return render_template('add_income.html', categories=categories, today=today, recurring=recurring)
 
 @login_required
+
+
 @app.route('/edit-income/<int:income_id>', methods=['GET', 'POST'])
 def edit_income(income_id):
     """Edit income record"""
@@ -2702,32 +2787,36 @@ def edit_income(income_id):
         
         conn.execute('''
             UPDATE income
-            SET date = ?, source = ?, description = ?, category = ?, amount = ?, notes = ?
-            WHERE id = ?
+            SET date = %s, source = %s, description = %s, category = %s, amount = %s, notes = %s
+            WHERE id = %s
         ''', (date, source, description, category, amount, notes, income_id))
         conn.commit()
         conn.close()
         
         return redirect(url_for('income'))
     
-    income_record = conn.execute('SELECT * FROM income WHERE id = ?', (income_id,)).fetchone()
+    income_record = conn.execute('SELECT * FROM income WHERE id = %s', (income_id,)).fetchone()
     categories = conn.execute('SELECT * FROM income_categories ORDER BY name').fetchall()
     conn.close()
     
     return render_template('edit_income.html', income=income_record, categories=categories)
 
 @login_required
+
+
 @app.route('/delete-income/<int:income_id>', methods=['POST'])
 def delete_income(income_id):
     """Delete income record"""
     conn = get_db_connection()
-    conn.execute('DELETE FROM income WHERE id = ?', (income_id,))
+    conn.execute('DELETE FROM income WHERE id = %s', (income_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('income'))
 
 
 @login_required
+
+
 @app.route('/manage/income-categories')
 def manage_income_categories():
     """Manage income categories"""
@@ -2737,6 +2826,8 @@ def manage_income_categories():
     return render_template('manage_income_categories.html', income_categories=income_categories)
 
 @login_required
+
+
 @app.route('/manage/income-categories/add', methods=['POST'])
 def add_income_category():
     """Add new income category"""
@@ -2746,7 +2837,7 @@ def add_income_category():
     if name:
         conn = get_db_connection()
         try:
-            conn.execute('INSERT INTO income_categories (name, description) VALUES (?, ?)', 
+            conn.execute('INSERT INTO income_categories (name, description) VALUES (%s, %s)', 
                         (name, description))
             conn.commit()
         except:
@@ -2756,30 +2847,34 @@ def add_income_category():
     return redirect(url_for('manage_income_categories'))
 
 @login_required
+
+
 @app.route('/manage/income-categories/delete/<int:cat_id>', methods=['POST'])
 def delete_income_category(cat_id):
     """Delete income category"""
     conn = get_db_connection()
-    conn.execute('DELETE FROM income_categories WHERE id = ?', (cat_id,))
+    conn.execute('DELETE FROM income_categories WHERE id = %s', (cat_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('manage_income_categories'))
 
 
 @login_required
+
+
 @app.route('/convert-to-income/<int:expense_id>')
 def convert_to_income(expense_id):
     """Convert an expense to income"""
     conn = get_db_connection()
     
     # Get the expense
-    expense = conn.execute('SELECT * FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    expense = conn.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     
     if expense:
         # Insert into income table
         conn.execute('''
             INSERT INTO income (date, source, description, category, amount, notes)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         ''', (
             expense['date'],
             expense['description'][:50] if expense['description'] else 'Unknown',
@@ -2790,7 +2885,7 @@ def convert_to_income(expense_id):
         ))
         
         # Delete from expenses
-        conn.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+        conn.execute('DELETE FROM expenses WHERE id = %s', (expense_id,))
         conn.commit()
     
     conn.close()
@@ -2800,18 +2895,20 @@ def convert_to_income(expense_id):
 
 @login_required
 
+
+
 @app.route('/convert-to-expense/<int:income_id>')
 @login_required
 def convert_to_expense(income_id):
     conn = get_db_connection()
-    income_entry = conn.execute('SELECT * FROM income WHERE id = ?', (income_id,)).fetchone()
+    income_entry = conn.execute('SELECT * FROM income WHERE id = %s', (income_id,)).fetchone()
     
     if income_entry:
         default_cat = conn.execute('SELECT id FROM categories LIMIT 1').fetchone()
         default_src = conn.execute('SELECT id FROM sources LIMIT 1').fetchone()
         
         conn.execute('''INSERT INTO expenses (date, description, amount, category_id, source_id, notes, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)''',
+                        VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)''',
                      (income_entry['date'],
                       f"{income_entry['source']} - {income_entry['category']}",
                       income_entry['amount'],
@@ -2819,11 +2916,13 @@ def convert_to_expense(income_id):
                       default_src['id'],
                       f"Converted from income: {income_entry['category']}"))
         
-        conn.execute('DELETE FROM income WHERE id = ?', (income_id,))
+        conn.execute('DELETE FROM income WHERE id = %s', (income_id,))
         conn.commit()
     
     conn.close()
     return redirect(url_for('view_expenses'))
+
+
 
 @app.route('/budget/export-pdf')
 def budget_export_pdf():
@@ -2840,7 +2939,7 @@ def budget_export_pdf():
     
     # Get the same parameters as the budget view
     view_type = request.args.get('view', 'month')
-    selected_month = request.args.get('month', datetime.today().strftime('%Y-%m'))
+    selected_month = request.args.get('month', datetime.today().to_char())
     selected_year = request.args.get('year', str(datetime.today().year))
     
     # Calculate date ranges (same as budget route)
@@ -2886,7 +2985,7 @@ def budget_export_pdf():
     spending = conn.execute('''
         SELECT e.category_id, e.subcategory_id, SUM(e.amount) as total_spent
         FROM expenses e
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
         GROUP BY e.category_id, e.subcategory_id
     ''', (start_date, end_date)).fetchall()
     
@@ -3068,6 +3167,8 @@ def budget_export_pdf():
 # ============================================================================
 
 @login_required
+
+
 @app.route('/profit-loss')
 def profit_loss():
     """Profit & Loss Statement"""
@@ -3076,7 +3177,7 @@ def profit_loss():
     
     # Get parameters
     view_type = request.args.get('view', 'month')
-    selected_month = request.args.get('month', datetime.today().strftime('%Y-%m'))
+    selected_month = request.args.get('month', datetime.today().to_char())
     selected_year = request.args.get('year', str(datetime.today().year))
     
     # Check if forecast mode (include future) or actual mode (past only)
@@ -3319,6 +3420,8 @@ def profit_loss():
 
 
 @login_required
+
+
 @app.route('/pl-export-pdf')
 def pl_export_pdf():
     """Export P&L as PDF with Last Year comparison"""
@@ -3337,7 +3440,7 @@ def pl_export_pdf():
     
     # Get parameters
     view_type = request.args.get('view', 'month')
-    selected_month = request.args.get('month', datetime.today().strftime('%Y-%m'))
+    selected_month = request.args.get('month', datetime.today().to_char())
     selected_year = request.args.get('year', str(datetime.today().year))
     
     # Calculate date ranges (Current Year)
@@ -3396,7 +3499,7 @@ def pl_export_pdf():
     income_by_category = conn.execute('''
         SELECT category, SUM(amount) as total
         FROM income
-        WHERE date BETWEEN ? AND ?
+        WHERE date BETWEEN %s AND %s
         GROUP BY category
         ORDER BY category
     ''', (start_date, actual_end_date)).fetchall()
@@ -3404,14 +3507,14 @@ def pl_export_pdf():
     total_income = conn.execute('''
         SELECT COALESCE(SUM(amount), 0) as total
         FROM income
-        WHERE date BETWEEN ? AND ?
+        WHERE date BETWEEN %s AND %s
     ''', (start_date, actual_end_date)).fetchone()['total']
     
     # Get Income data (Last Year)
     ly_income_by_category = conn.execute('''
         SELECT category, SUM(amount) as total
         FROM income
-        WHERE date BETWEEN ? AND ?
+        WHERE date BETWEEN %s AND %s
         GROUP BY category
         ORDER BY category
     ''', (ly_start_date, ly_end_date)).fetchall()
@@ -3419,7 +3522,7 @@ def pl_export_pdf():
     ly_total_income = conn.execute('''
         SELECT COALESCE(SUM(amount), 0) as total
         FROM income
-        WHERE date BETWEEN ? AND ?
+        WHERE date BETWEEN %s AND %s
     ''', (ly_start_date, ly_end_date)).fetchone()['total']
     
     # Get Expense data (Current Year)
@@ -3427,7 +3530,7 @@ def pl_export_pdf():
         SELECT c.id, c.name, SUM(e.amount) as total
         FROM expenses e
         JOIN categories c ON e.category_id = c.id
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
         GROUP BY c.id, c.name
         ORDER BY c.name
     ''', (start_date, end_date)).fetchall()
@@ -3436,7 +3539,7 @@ def pl_export_pdf():
         SELECT COALESCE(SUM(e.amount), 0) as total
         FROM expenses e
         JOIN categories c ON e.category_id = c.id
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
     ''', (start_date, end_date)).fetchone()['total']
     
     # Get Expense data (Last Year)
@@ -3444,7 +3547,7 @@ def pl_export_pdf():
         SELECT c.id, c.name, SUM(e.amount) as total
         FROM expenses e
         JOIN categories c ON e.category_id = c.id
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
         GROUP BY c.id, c.name
         ORDER BY c.name
     ''', (ly_start_date, ly_end_date)).fetchall()
@@ -3453,7 +3556,7 @@ def pl_export_pdf():
         SELECT COALESCE(SUM(e.amount), 0) as total
         FROM expenses e
         JOIN categories c ON e.category_id = c.id
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
           AND (e.is_split IS NULL OR e.is_split != 1)
     ''', (ly_start_date, ly_end_date)).fetchone()['total']
     
@@ -3640,6 +3743,8 @@ def pl_export_pdf():
 
 
 @login_required
+
+
 @app.route('/api/expense-details')
 def api_expense_details():
     """Get expense transactions for a category and date range"""
@@ -3666,8 +3771,8 @@ def api_expense_details():
         FROM expenses e
         LEFT JOIN vendors v ON e.vendor_id = v.id
         LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
-        WHERE e.category_id = ? 
-        AND e.date BETWEEN ? AND ?
+        WHERE e.category_id = %s 
+        AND e.date BETWEEN %s AND %s
         AND (e.is_split IS NULL OR e.is_split != 1)
         ORDER BY e.date DESC
     ''', (category_id, start_date, end_date)).fetchall()
@@ -3676,6 +3781,8 @@ def api_expense_details():
     return jsonify([dict(exp) for exp in expenses])
 
 @login_required
+
+
 @app.route('/api/income-details')
 def api_income_details():
     """Get income transactions for a category and date range"""
@@ -3690,8 +3797,8 @@ def api_income_details():
     income = conn.execute('''
         SELECT date, source, description, amount
         FROM income
-        WHERE category = ? 
-        AND date BETWEEN ? AND ?
+        WHERE category = %s 
+        AND date BETWEEN %s AND %s
         ORDER BY date DESC
     ''', (category, start_date, end_date)).fetchall()
     conn.close()
@@ -3704,6 +3811,8 @@ def api_income_details():
 # ============================================================================
 
 @login_required
+
+
 @app.route('/query-analysis')
 def query_analysis():
     """Query and analyze expenses by various filters"""
@@ -3714,7 +3823,7 @@ def query_analysis():
     filter_type = request.args.get('filter_type', 'category')  # category, vendor, subcategory
     filter_value = request.args.get('filter_value', '')
     time_period = request.args.get('time_period', 'month')
-    selected_month = request.args.get('month', datetime.today().strftime('%Y-%m'))
+    selected_month = request.args.get('month', datetime.today().to_char())
     selected_year = request.args.get('year', str(datetime.today().year))
     custom_start = request.args.get('custom_start', '')
     custom_end = request.args.get('custom_end', '')
@@ -3784,19 +3893,19 @@ def query_analysis():
             LEFT JOIN categories c ON e.category_id = c.id
             LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
             LEFT JOIN vendors v ON e.vendor_id = v.id
-            WHERE e.date BETWEEN ? AND ?
+            WHERE e.date BETWEEN %s AND %s
         '''
         
         params = [start_date, end_date]
         
         if filter_type == 'category':
-            base_query += ' AND e.category_id = ?'
+            base_query += ' AND e.category_id = %s'
             params.append(int(filter_value))
         elif filter_type == 'vendor':
-            base_query += ' AND e.vendor_id = ?'
+            base_query += ' AND e.vendor_id = %s'
             params.append(int(filter_value))
         elif filter_type == 'subcategory':
-            base_query += ' AND e.subcategory_id = ?'
+            base_query += ' AND e.subcategory_id = %s'
             params.append(int(filter_value))
         
         base_query += ' ORDER BY e.date DESC'
@@ -3815,7 +3924,7 @@ def query_analysis():
                     SELECT c.name, c.color, SUM(e.amount) as total, COUNT(*) as count
                     FROM expenses e
                     JOIN categories c ON e.category_id = c.id
-                    WHERE e.vendor_id = ? AND e.date BETWEEN ? AND ?
+                    WHERE e.vendor_id = %s AND e.date BETWEEN %s AND %s
                     GROUP BY c.id, c.name, c.color
                     ORDER BY total DESC
                 ''', (int(filter_value), start_date, end_date)).fetchall()
@@ -3826,7 +3935,7 @@ def query_analysis():
                     SELECT v.name, SUM(e.amount) as total, COUNT(*) as count
                     FROM expenses e
                     JOIN vendors v ON e.vendor_id = v.id
-                    WHERE e.category_id = ? AND e.date BETWEEN ? AND ?
+                    WHERE e.category_id = %s AND e.date BETWEEN %s AND %s
                     GROUP BY v.id, v.name
                     ORDER BY total DESC
                     LIMIT 10
@@ -3857,6 +3966,8 @@ def query_analysis():
 
 
 @login_required
+
+
 @app.route('/query-export-pdf')
 def query_export_pdf():
     """Export query results as PDF"""
@@ -3874,7 +3985,7 @@ def query_export_pdf():
     filter_type = request.args.get('filter_type', 'category')
     filter_value = request.args.get('filter_value', '')
     time_period = request.args.get('time_period', 'month')
-    selected_month = request.args.get('month', datetime.today().strftime('%Y-%m'))
+    selected_month = request.args.get('month', datetime.today().to_char())
     selected_year = request.args.get('year', str(datetime.today().year))
     custom_start = request.args.get('custom_start', '')
     custom_end = request.args.get('custom_end', '')
@@ -3915,26 +4026,26 @@ def query_export_pdf():
         FROM expenses e
         LEFT JOIN categories c ON e.category_id = c.id
         LEFT JOIN vendors v ON e.vendor_id = v.id
-        WHERE e.date BETWEEN ? AND ?
+        WHERE e.date BETWEEN %s AND %s
     '''
     
     params = [start_date, end_date]
     filter_name = ''
     
     if filter_type == 'category':
-        base_query += ' AND e.category_id = ?'
+        base_query += ' AND e.category_id = %s'
         params.append(int(filter_value))
-        cat = conn.execute('SELECT name FROM categories WHERE id = ?', (int(filter_value),)).fetchone()
+        cat = conn.execute('SELECT name FROM categories WHERE id = %s', (int(filter_value),)).fetchone()
         filter_name = cat['name'] if cat else 'Unknown'
     elif filter_type == 'vendor':
-        base_query += ' AND e.vendor_id = ?'
+        base_query += ' AND e.vendor_id = %s'
         params.append(int(filter_value))
-        vendor = conn.execute('SELECT name FROM vendors WHERE id = ?', (int(filter_value),)).fetchone()
+        vendor = conn.execute('SELECT name FROM vendors WHERE id = %s', (int(filter_value),)).fetchone()
         filter_name = vendor['name'] if vendor else 'Unknown'
     elif filter_type == 'subcategory':
-        base_query += ' AND e.subcategory_id = ?'
+        base_query += ' AND e.subcategory_id = %s'
         params.append(int(filter_value))
-        subcat = conn.execute('SELECT name FROM subcategories WHERE id = ?', (int(filter_value),)).fetchone()
+        subcat = conn.execute('SELECT name FROM subcategories WHERE id = %s', (int(filter_value),)).fetchone()
         filter_name = subcat['name'] if subcat else 'Unknown'
     
     base_query += ' ORDER BY e.date DESC'
@@ -4047,6 +4158,8 @@ def query_export_pdf():
 
 
 @login_required
+
+
 @app.route('/expenses-export-pdf')
 def expenses_export_pdf():
     """Export expense report as PDF"""
@@ -4092,52 +4205,52 @@ def expenses_export_pdf():
     
     # Apply filters
     if category_id:
-        query += ' AND e.category_id = ?'
+        query += ' AND e.category_id = %s'
         params.append(category_id)
     
     if subcategory_id:
-        query += ' AND e.subcategory_id = ?'
+        query += ' AND e.subcategory_id = %s'
         params.append(subcategory_id)
     
     if vendor_id:
-        query += ' AND e.vendor_id = ?'
+        query += ' AND e.vendor_id = %s'
         params.append(vendor_id)
     
     if source_id:
-        query += ' AND e.source_id = ?'
+        query += ' AND e.source_id = %s'
         params.append(source_id)
     
     # Search filter (description or notes)
     if search:
-        query += ' AND (e.description LIKE ? OR e.notes LIKE ?)'
+        query += ' AND (e.description LIKE %s OR e.notes LIKE %s)'
         search_param = f'%{search}%'
         params.append(search_param)
         params.append(search_param)
     
     # Amount range filters
     if min_amount is not None:
-        query += ' AND e.amount >= ?'
+        query += ' AND e.amount >= %s'
         params.append(min_amount)
     
     if max_amount is not None:
-        query += ' AND e.amount <= ?'
+        query += ' AND e.amount <= %s'
         params.append(max_amount)
     
     # Date filtering
     if period == 'mtd':
         today = datetime.today()
         start_of_month = today.replace(day=1).strftime('%Y-%m-%d')
-        query += ' AND e.date >= ?'
+        query += ' AND e.date >= %s'
         params.append(start_of_month)
         period_label = f"Month to Date - {today.strftime('%B %Y')}"
     elif period == 'ytd':
         today = datetime.today()
         start_of_year = today.replace(month=1, day=1).strftime('%Y-%m-%d')
-        query += ' AND e.date >= ?'
+        query += ' AND e.date >= %s'
         params.append(start_of_year)
         period_label = f"Year to Date - {today.year}"
     elif period == 'custom' and start_date and end_date:
-        query += ' AND e.date BETWEEN ? AND ?'
+        query += ' AND e.date BETWEEN %s AND %s'
         params.append(start_date)
         params.append(end_date)
         period_label = f"{start_date} to {end_date}"
@@ -4151,22 +4264,22 @@ def expenses_export_pdf():
     # Get filter names for display
     filter_desc = []
     if category_id:
-        cat = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+        cat = conn.execute('SELECT name FROM categories WHERE id = %s', (category_id,)).fetchone()
         if cat:
             filter_desc.append(f"Category: {cat['name']}")
     
     if subcategory_id:
-        subcat = conn.execute('SELECT name FROM subcategories WHERE id = ?', (subcategory_id,)).fetchone()
+        subcat = conn.execute('SELECT name FROM subcategories WHERE id = %s', (subcategory_id,)).fetchone()
         if subcat:
             filter_desc.append(f"Subcategory: {subcat['name']}")
     
     if vendor_id:
-        vendor = conn.execute('SELECT name FROM vendors WHERE id = ?', (vendor_id,)).fetchone()
+        vendor = conn.execute('SELECT name FROM vendors WHERE id = %s', (vendor_id,)).fetchone()
         if vendor:
             filter_desc.append(f"Vendor: {vendor['name']}")
     
     if source_id:
-        source = conn.execute('SELECT name FROM sources WHERE id = ?', (source_id,)).fetchone()
+        source = conn.execute('SELECT name FROM sources WHERE id = %s', (source_id,)).fetchone()
         if source:
             filter_desc.append(f"Source: {source['name']}")
     
@@ -4290,6 +4403,8 @@ def expenses_export_pdf():
 
 
 @login_required
+
+
 @app.route('/income-export-pdf')
 def income_export_pdf():
     """Export income report as PDF"""
@@ -4322,23 +4437,23 @@ def income_export_pdf():
     
     # Apply filters
     if category:
-        query += ' AND category = ?'
+        query += ' AND category = %s'
         params.append(category)
     
     # Date filtering
     today = datetime.today()
     if period == 'mtd':
         start_of_month = today.replace(day=1).strftime('%Y-%m-%d')
-        query += ' AND date >= ?'
+        query += ' AND date >= %s'
         params.append(start_of_month)
         period_label = f"Month to Date - {today.strftime('%B %Y')}"
     elif period == 'ytd':
         start_of_year = today.replace(month=1, day=1).strftime('%Y-%m-%d')
-        query += ' AND date >= ?'
+        query += ' AND date >= %s'
         params.append(start_of_year)
         period_label = f"Year to Date - {today.year}"
     elif period == 'custom' and start_date and end_date:
-        query += ' AND date BETWEEN ? AND ?'
+        query += ' AND date BETWEEN %s AND %s'
         params.append(start_date)
         params.append(end_date)
         period_label = f"{start_date} to {end_date}"
@@ -4459,6 +4574,8 @@ def income_export_pdf():
 
 
 @login_required
+
+
 @app.route('/debt-strategy-pdf')
 def debt_strategy_pdf():
     """Export complete debt payoff strategy comparison as PDF"""
@@ -4648,6 +4765,8 @@ def debt_strategy_pdf():
 # ADMIN ROUTES
 # ============================================================================
 
+
+
 @app.route('/admin')
 @login_required
 def admin():
@@ -4709,6 +4828,8 @@ def admin():
                 })
     
     return render_template('admin.html', stats=stats, backups=backups)
+
+
 
 @app.route('/admin/clear-data', methods=['POST'])
 @login_required
@@ -4786,6 +4907,8 @@ def admin_clear_data():
 
 
 
+
+
 @app.route('/admin/restore-backup', methods=['POST'])
 @login_required
 def admin_restore_backup():
@@ -4838,7 +4961,7 @@ def generate_recurring_expenses(conn, recurring_id):
     from datetime import datetime, timedelta
     import calendar as cal_module
     
-    recurring = conn.execute('SELECT * FROM recurring_expenses WHERE id = ?', (recurring_id,)).fetchone()
+    recurring = conn.execute('SELECT * FROM recurring_expenses WHERE id = %s', (recurring_id,)).fetchone()
     if not recurring or not recurring['is_active']:
         print(f"  Recurring {recurring_id} not found or inactive")
         return
@@ -4915,7 +5038,7 @@ def generate_recurring_expenses(conn, recurring_id):
     
     for gen_date in generated_dates:
         existing = conn.execute(
-            'SELECT id FROM expenses WHERE recurring_id = ? AND date = ?',
+            'SELECT id FROM expenses WHERE recurring_id = %s AND date = %s',
             (recurring_id, gen_date.strftime('%Y-%m-%d'))
         ).fetchone()
         
@@ -4923,7 +5046,7 @@ def generate_recurring_expenses(conn, recurring_id):
             conn.execute('''
                 INSERT INTO expenses (date, source_id, description, category_id,
                     subcategory_id, vendor_id, amount, notes, recurring_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (gen_date.strftime('%Y-%m-%d'), recurring['source_id'],
                   recurring['description'], recurring['category_id'],
                   recurring['subcategory_id'], recurring['vendor_id'],
@@ -4945,6 +5068,8 @@ def get_nth_weekday(year, month, weekday, n):
     return None
 
 
+
+
 @app.route('/api/check-duplicate', methods=['POST'])
 @login_required
 def check_duplicate():
@@ -4963,7 +5088,7 @@ def check_duplicate():
                    CASE WHEN e.recurring_id IS NOT NULL THEN 1 ELSE 0 END as is_recurring
             FROM expenses e
             LEFT JOIN categories c ON e.category_id = c.id
-            WHERE e.date = ? AND e.amount = ? AND e.category_id = ?
+            WHERE e.date = %s AND e.amount = %s AND e.category_id = %s
         ''', (date, amount, category_id)).fetchall()
         
         conn.close()
@@ -4983,6 +5108,8 @@ def check_duplicate():
     except Exception as e:
         print(f"Error checking duplicates: {e}")
         return jsonify({'duplicates': []})
+
+
 
 
 @app.route('/recurring')
@@ -5021,6 +5148,8 @@ def manage_recurring():
                          recurring_income=recurring_income)
 
 
+
+
 @app.route('/recurring/cancel/<int:recurring_id>', methods=['POST'])
 @login_required
 def cancel_recurring(recurring_id):
@@ -5029,12 +5158,14 @@ def cancel_recurring(recurring_id):
     from datetime import datetime
     today = datetime.now().strftime('%Y-%m-%d')
     
-    conn.execute('UPDATE recurring_expenses SET is_active = 0 WHERE id = ?', (recurring_id,))
-    conn.execute('DELETE FROM expenses WHERE recurring_id = ? AND date > ?', (recurring_id, today))
+    conn.execute('UPDATE recurring_expenses SET is_active = 0 WHERE id = %s', (recurring_id,))
+    conn.execute('DELETE FROM expenses WHERE recurring_id = %s AND date > %s', (recurring_id, today))
     
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
+
+
 
 
 @app.route('/recurring/reactivate/<int:recurring_id>', methods=['POST'])
@@ -5042,11 +5173,13 @@ def cancel_recurring(recurring_id):
 def reactivate_recurring(recurring_id):
     """Reactivate a cancelled recurring expense"""
     conn = get_db_connection()
-    conn.execute('UPDATE recurring_expenses SET is_active = 1 WHERE id = ?', (recurring_id,))
+    conn.execute('UPDATE recurring_expenses SET is_active = 1 WHERE id = %s', (recurring_id,))
     generate_recurring_expenses(conn, recurring_id)
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
+
+
 
 
 @app.route('/recurring/delete/<int:recurring_id>', methods=['POST'])
@@ -5054,8 +5187,8 @@ def reactivate_recurring(recurring_id):
 def delete_recurring(recurring_id):
     """Delete a recurring expense and all generated expenses"""
     conn = get_db_connection()
-    conn.execute('DELETE FROM expenses WHERE recurring_id = ?', (recurring_id,))
-    conn.execute('DELETE FROM recurring_expenses WHERE id = ?', (recurring_id,))
+    conn.execute('DELETE FROM expenses WHERE recurring_id = %s', (recurring_id,))
+    conn.execute('DELETE FROM recurring_expenses WHERE id = %s', (recurring_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
@@ -5068,7 +5201,7 @@ def generate_recurring_income(conn, recurring_id):
     from datetime import datetime, timedelta
     import calendar as cal_module
     
-    recurring = conn.execute('SELECT * FROM recurring_income WHERE id = ?', (recurring_id,)).fetchone()
+    recurring = conn.execute('SELECT * FROM recurring_income WHERE id = %s', (recurring_id,)).fetchone()
     if not recurring or not recurring['is_active']:
         print(f"  Recurring income {recurring_id} not found or inactive")
         return
@@ -5167,17 +5300,19 @@ def generate_recurring_income(conn, recurring_id):
     
     for gen_date in generated_dates:
         existing = conn.execute(
-            'SELECT id FROM income WHERE recurring_id = ? AND date = ?',
+            'SELECT id FROM income WHERE recurring_id = %s AND date = %s',
             (recurring_id, gen_date.strftime('%Y-%m-%d'))
         ).fetchone()
         
         if not existing:
             conn.execute('''
                 INSERT INTO income (date, source, description, category, amount, notes, recurring_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
             ''', (gen_date.strftime('%Y-%m-%d'), recurring['source'],
                   recurring['description'], recurring['category'],
                   recurring['amount'], recurring['notes'], recurring_id))
+
+
 
 
 @app.route('/recurring/income/cancel/<int:recurring_id>', methods=['POST'])
@@ -5188,12 +5323,14 @@ def cancel_recurring_income(recurring_id):
     from datetime import datetime
     today = datetime.now().strftime('%Y-%m-%d')
     
-    conn.execute('UPDATE recurring_income SET is_active = 0 WHERE id = ?', (recurring_id,))
-    conn.execute('DELETE FROM income WHERE recurring_id = ? AND date > ?', (recurring_id, today))
+    conn.execute('UPDATE recurring_income SET is_active = 0 WHERE id = %s', (recurring_id,))
+    conn.execute('DELETE FROM income WHERE recurring_id = %s AND date > %s', (recurring_id, today))
     
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
+
+
 
 
 @app.route('/recurring/income/reactivate/<int:recurring_id>', methods=['POST'])
@@ -5201,11 +5338,13 @@ def cancel_recurring_income(recurring_id):
 def reactivate_recurring_income(recurring_id):
     """Reactivate a cancelled recurring income"""
     conn = get_db_connection()
-    conn.execute('UPDATE recurring_income SET is_active = 1 WHERE id = ?', (recurring_id,))
+    conn.execute('UPDATE recurring_income SET is_active = 1 WHERE id = %s', (recurring_id,))
     generate_recurring_income(conn, recurring_id)
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
+
+
 
 
 @app.route('/recurring/income/delete/<int:recurring_id>', methods=['POST'])
@@ -5213,8 +5352,8 @@ def reactivate_recurring_income(recurring_id):
 def delete_recurring_income(recurring_id):
     """Delete a recurring income and all generated entries"""
     conn = get_db_connection()
-    conn.execute('DELETE FROM income WHERE recurring_id = ?', (recurring_id,))
-    conn.execute('DELETE FROM recurring_income WHERE id = ?', (recurring_id,))
+    conn.execute('DELETE FROM income WHERE recurring_id = %s', (recurring_id,))
+    conn.execute('DELETE FROM recurring_income WHERE id = %s', (recurring_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('manage_recurring'))
@@ -5291,17 +5430,19 @@ def calculate_fixed_payment_schedules(debts):
 
 
 
+
+
 @app.route('/debt/toggle-strategy/<int:debt_id>', methods=['POST'])
 @login_required
 def toggle_debt_strategy(debt_id):
     """Toggle whether a debt is included in payoff strategies"""
     conn = get_db_connection()
     
-    debt = conn.execute('SELECT include_in_strategy FROM debts WHERE id = ?', (debt_id,)).fetchone()
+    debt = conn.execute('SELECT include_in_strategy FROM debts WHERE id = %s', (debt_id,)).fetchone()
     
     if debt:
         new_value = 0 if debt['include_in_strategy'] else 1
-        conn.execute('UPDATE debts SET include_in_strategy = ? WHERE id = ?', (new_value, debt_id))
+        conn.execute('UPDATE debts SET include_in_strategy = %s WHERE id = %s', (new_value, debt_id))
         conn.commit()
     
     conn.close()
@@ -5379,6 +5520,8 @@ def calculate_fixed_payment_schedules(debts):
 
 
 
+
+
 @app.route('/api/subcategories')
 def api_subcategories():
     """Get subcategories for a category"""
@@ -5389,7 +5532,7 @@ def api_subcategories():
     
     conn = get_db_connection()
     subcategories = conn.execute(
-        'SELECT id, name FROM subcategories WHERE category_id = ? ORDER BY name',
+        'SELECT id, name FROM subcategories WHERE category_id = %s ORDER BY name',
         (category_id,)
     ).fetchall()
     conn.close()
@@ -5397,6 +5540,8 @@ def api_subcategories():
     return jsonify({
         'subcategories': [{'id': s['id'], 'name': s['name']} for s in subcategories]
     })
+
+
 
 
 
@@ -5415,7 +5560,7 @@ def help_page():
     sections_with_items = []
     for section in sections:
         items = conn.execute(
-            'SELECT * FROM help_items WHERE section_id = ? AND is_active = 1 ORDER BY display_order',
+            'SELECT * FROM help_items WHERE section_id = %s AND is_active = 1 ORDER BY display_order',
             (section['id'],)
         ).fetchall()
         sections_with_items.append({
@@ -5425,6 +5570,8 @@ def help_page():
     
     conn.close()
     return render_template('help.html', sections_with_items=sections_with_items)
+
+
 
 
 
@@ -5462,12 +5609,12 @@ def edit_help_item(item_id):
         # Update item
         if image_path:
             conn.execute(
-                'UPDATE help_items SET title = ?, content = ?, image_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                'UPDATE help_items SET title = %s, content = %s, image_path = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s',
                 (title, content, image_path, item_id)
             )
         else:
             conn.execute(
-                'UPDATE help_items SET title = ?, content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+                'UPDATE help_items SET title = %s, content = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s',
                 (title, content, item_id)
             )
         
@@ -5476,7 +5623,7 @@ def edit_help_item(item_id):
         return redirect(url_for('help_page'))
     
     # GET
-    item = conn.execute('SELECT * FROM help_items WHERE id = ?', (item_id,)).fetchone()
+    item = conn.execute('SELECT * FROM help_items WHERE id = %s', (item_id,)).fetchone()
     conn.close()
     
     if not item:
@@ -5485,13 +5632,15 @@ def edit_help_item(item_id):
     return render_template('edit_help_item.html', item=item)
 
 
+
+
 @app.route('/help/delete-item-image/<int:item_id>', methods=['POST'])
 @login_required
 def delete_help_item_image(item_id):
     """Delete image from help item"""
     conn = get_db_connection()
     
-    item = conn.execute('SELECT image_path FROM help_items WHERE id = ?', (item_id,)).fetchone()
+    item = conn.execute('SELECT image_path FROM help_items WHERE id = %s', (item_id,)).fetchone()
     
     if item and item['image_path']:
         import os
@@ -5499,17 +5648,21 @@ def delete_help_item_image(item_id):
         if os.path.exists(filepath):
             os.remove(filepath)
         
-        conn.execute('UPDATE help_items SET image_path = NULL WHERE id = ?', (item_id,))
+        conn.execute('UPDATE help_items SET image_path = NULL WHERE id = %s', (item_id,))
         conn.commit()
     
     conn.close()
     return redirect(url_for('edit_help_item', item_id=item_id))
 
 
+
+
 @app.route('/help/edit/<section_key>', methods=['GET', 'POST'])
 @login_required
 def edit_help_section_old(section_key):
     pass
+
+
 
 
 
@@ -5532,7 +5685,7 @@ def paycheck_planner():
         # Update or insert schedule
         conn.execute('DELETE FROM payday_schedule')
         conn.execute(
-            'INSERT INTO payday_schedule (id, frequency, day_of_week, day_of_month, last_payday) VALUES (1, ?, ?, ?, ?)',
+            'INSERT INTO payday_schedule (id, frequency, day_of_week, day_of_month, last_payday) VALUES (1, %s, %s, %s, %s)',
             (frequency, day_of_week, day_of_month, last_payday)
         )
         conn.commit()
@@ -5554,14 +5707,14 @@ def paycheck_planner():
         amount = float(request.form.get('estimate_amount', 0))
         
         conn.execute(
-            'INSERT INTO estimated_expenses (paycheck_date, description, category_id, subcategory_id, vendor_id, amount) VALUES (?, ?, ?, ?, ?, ?)',
+            'INSERT INTO estimated_expenses (paycheck_date, description, category_id, subcategory_id, vendor_id, amount) VALUES (%s, %s, %s, %s, %s, %s)',
             (paycheck_date, description, category_id, subcategory_id, vendor_id, amount)
         )
         conn.commit()
     
     if request.method == 'POST' and 'delete_estimate' in request.form:
         estimate_id = request.form.get('delete_estimate')
-        conn.execute('DELETE FROM estimated_expenses WHERE id = ?', (estimate_id,))
+        conn.execute('DELETE FROM estimated_expenses WHERE id = %s', (estimate_id,))
         conn.commit()
     
     # Get active recurring income for dropdown
@@ -5599,7 +5752,7 @@ def paycheck_planner():
     for expense in recurring_expenses:
         # Get all generated expenses for this recurring expense between now and paycheck
         generated = conn.execute(
-            'SELECT * FROM expenses WHERE recurring_id = ? AND date >= ? AND date <= ? ORDER BY date',
+            'SELECT * FROM expenses WHERE recurring_id = %s AND date >= %s AND date <= %s ORDER BY date',
             (expense['id'], today.strftime('%Y-%m-%d'), paycheck_date)
         ).fetchall()
         
@@ -5613,7 +5766,7 @@ def paycheck_planner():
     
     # Get category names
     for bill in bills_due:
-        cat = conn.execute('SELECT name FROM categories WHERE id = ?', (bill['category_id'],)).fetchone()
+        cat = conn.execute('SELECT name FROM categories WHERE id = %s', (bill['category_id'],)).fetchone()
         bill['category'] = cat['name'] if cat else 'Unknown'
     
     # Sort by date
@@ -5623,7 +5776,7 @@ def paycheck_planner():
     estimated_expenses = []
     if paycheck_date:
         estimates = conn.execute(
-            'SELECT e.*, c.name as category_name, sc.name as subcategory_name, v.name as vendor_name FROM estimated_expenses e LEFT JOIN categories c ON e.category_id = c.id LEFT JOIN subcategories sc ON e.subcategory_id = sc.id LEFT JOIN vendors v ON e.vendor_id = v.id WHERE e.paycheck_date = ? ORDER BY e.created_at',
+            'SELECT e.*, c.name as category_name, sc.name as subcategory_name, v.name as vendor_name FROM estimated_expenses e LEFT JOIN categories c ON e.category_id = c.id LEFT JOIN subcategories sc ON e.subcategory_id = sc.id LEFT JOIN vendors v ON e.vendor_id = v.id WHERE e.paycheck_date = %s ORDER BY e.created_at',
             (paycheck_date,)
         ).fetchall()
         estimated_expenses = [dict(e) for e in estimates]
@@ -5789,6 +5942,8 @@ def calculate_next_recurring_date(recurring_item, from_date):
 
 
 
+
+
 @app.route('/paycheck-planner/pdf')
 @login_required
 def paycheck_planner_pdf():
@@ -5822,12 +5977,12 @@ def paycheck_planner_pdf():
     bills_due = []
     for expense in recurring_expenses:
         generated = conn.execute(
-            'SELECT * FROM expenses WHERE recurring_id = ? AND date >= ? AND date <= ? ORDER BY date',
+            'SELECT * FROM expenses WHERE recurring_id = %s AND date >= %s AND date <= %s ORDER BY date',
             (expense['id'], today.strftime('%Y-%m-%d'), paycheck_date)
         ).fetchall()
         
         for gen in generated:
-            cat = conn.execute('SELECT name FROM categories WHERE id = ?', (expense['category_id'],)).fetchone()
+            cat = conn.execute('SELECT name FROM categories WHERE id = %s', (expense['category_id'],)).fetchone()
             bills_due.append({
                 'date': gen['date'],
                 'description': expense['description'],
@@ -5839,7 +5994,7 @@ def paycheck_planner_pdf():
     
     # Get estimated expenses
     estimates = conn.execute(
-        'SELECT e.*, c.name as category_name, sc.name as subcategory_name FROM estimated_expenses e LEFT JOIN categories c ON e.category_id = c.id LEFT JOIN subcategories sc ON e.subcategory_id = sc.id WHERE e.paycheck_date = ? ORDER BY e.created_at',
+        'SELECT e.*, c.name as category_name, sc.name as subcategory_name FROM estimated_expenses e LEFT JOIN categories c ON e.category_id = c.id LEFT JOIN subcategories sc ON e.subcategory_id = sc.id WHERE e.paycheck_date = %s ORDER BY e.created_at',
         (paycheck_date,)
     ).fetchall()
     
@@ -5940,6 +6095,8 @@ def paycheck_planner_pdf():
 
 
 
+
+
 @app.route('/import-csv', methods=['GET', 'POST'])
 @login_required
 def import_csv():
@@ -6023,6 +6180,8 @@ def import_csv():
     
     conn.close()
     return render_template('csv_import.html', sources=sources)
+
+
 
 
 @app.route('/import-csv/process', methods=['POST'])
@@ -6114,7 +6273,7 @@ def process_csv_import():
             if is_income:
                 # Check for duplicate income
                 duplicate = conn.execute(
-                    'SELECT id FROM income WHERE date = ? AND amount = ?',
+                    'SELECT id FROM income WHERE date = %s AND amount = %s',
                     (date, amount)
                 ).fetchone()
                 
@@ -6123,20 +6282,20 @@ def process_csv_import():
                     continue
                 
                 # Get source name from source_id
-                source_row = conn.execute('SELECT name FROM sources WHERE id = ?', (default_source_id,)).fetchone()
+                source_row = conn.execute('SELECT name FROM sources WHERE id = %s', (default_source_id,)).fetchone()
                 source_name = source_row['name'] if source_row else 'Unknown'
                 
                 # Insert as income (needs both source and source_id)
                 conn.execute(
                     '''INSERT INTO income (date, description, amount, source, source_id)
-                       VALUES (?, ?, ?, ?, ?)''',
+                       VALUES (%s, %s, %s, %s, %s)''',
                     (date, description, amount, source_name, default_source_id)
                 )
                 imported_count += 1
             else:
                 # Check for duplicate expense
                 duplicate = conn.execute(
-                    'SELECT id FROM expenses WHERE date = ? AND amount = ?',
+                    'SELECT id FROM expenses WHERE date = %s AND amount = %s',
                     (date, amount)
                 ).fetchone()
                 
@@ -6147,7 +6306,7 @@ def process_csv_import():
                 # Insert expense
                 conn.execute(
                     '''INSERT INTO expenses (date, description, amount, source_id)
-                       VALUES (?, ?, ?, ?)''',
+                       VALUES (%s, %s, %s, %s)''',
                     (date, description, amount, default_source_id)
                 )
                 imported_count += 1
@@ -6173,6 +6332,8 @@ def process_csv_import():
     
     return redirect(url_for('view_expenses', 
                           success=f'Imported {imported_count} expenses/income, skipped {skipped_count} duplicates'))
+
+
 
 
 @app.route('/expenses/find-duplicates')
@@ -6253,6 +6414,8 @@ def find_duplicates():
                          total_duplicates=sum(len(g['duplicates']) for g in duplicate_groups))
 
 
+
+
 @app.route('/expenses/delete-duplicates', methods=['POST'])
 @login_required
 def delete_duplicates():
@@ -6267,13 +6430,15 @@ def delete_duplicates():
     
     deleted_count = 0
     for expense_id in selected_ids:
-        conn.execute('DELETE FROM expenses WHERE id = ?', (expense_id,))
+        conn.execute('DELETE FROM expenses WHERE id = %s', (expense_id,))
         deleted_count += 1
     
     conn.commit()
     conn.close()
     
     return redirect(url_for('view_expenses', success=f'Deleted {deleted_count} duplicate expenses'))
+
+
 
 
 
@@ -6291,7 +6456,7 @@ def api_add_category():
     conn = get_db_connection()
     
     try:
-        cursor = conn.execute('INSERT INTO categories (name) VALUES (?)', (name,))
+        cursor = conn.execute('INSERT INTO categories (name) VALUES (%s)', (name,))
         category_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -6299,6 +6464,8 @@ def api_add_category():
     except Exception as e:
         conn.close()
         return jsonify({'success': False, 'error': str(e)})
+
+
 
 
 @app.route('/api/add-subcategory', methods=['POST'])
@@ -6315,7 +6482,7 @@ def api_add_subcategory():
     conn = get_db_connection()
     
     try:
-        cursor = conn.execute('INSERT INTO subcategories (name, category_id) VALUES (?, ?)', 
+        cursor = conn.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s)', 
                             (name, category_id))
         subcategory_id = cursor.lastrowid
         conn.commit()
@@ -6324,6 +6491,8 @@ def api_add_subcategory():
     except Exception as e:
         conn.close()
         return jsonify({'success': False, 'error': str(e)})
+
+
 
 
 @app.route('/api/add-vendor', methods=['POST'])
@@ -6339,7 +6508,7 @@ def api_add_vendor():
     conn = get_db_connection()
     
     try:
-        cursor = conn.execute('INSERT INTO vendors (name) VALUES (?)', (name,))
+        cursor = conn.execute('INSERT INTO vendors (name) VALUES (%s)', (name,))
         vendor_id = cursor.lastrowid
         conn.commit()
         conn.close()
@@ -6349,13 +6518,15 @@ def api_add_vendor():
         return jsonify({'success': False, 'error': str(e)})
 
 
+
+
 @app.route('/api/subcategories/<int:category_id>')
 @login_required
 def api_get_subcategories(category_id):
     """Get subcategories for a category"""
     conn = get_db_connection()
     subcategories = conn.execute(
-        'SELECT id, name FROM subcategories WHERE category_id = ? ORDER BY name',
+        'SELECT id, name FROM subcategories WHERE category_id = %s ORDER BY name',
         (category_id,)
     ).fetchall()
     conn.close()
@@ -6365,15 +6536,19 @@ def api_get_subcategories(category_id):
 
 
 
+
+
 @app.route('/expense/archive/<int:expense_id>', methods=['POST'])
 @login_required
 def archive_expense(expense_id):
     """Archive an expense (hide from view but keep in reports)"""
     conn = get_db_connection()
-    conn.execute('UPDATE expenses SET archived = 1 WHERE id = ?', (expense_id,))
+    conn.execute('UPDATE expenses SET archived = 1 WHERE id = %s', (expense_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('view_expenses'))
+
+
 
 
 @app.route('/expense/unarchive/<int:expense_id>', methods=['POST'])
@@ -6381,10 +6556,12 @@ def archive_expense(expense_id):
 def unarchive_expense(expense_id):
     """Unarchive an expense (make it visible again)"""
     conn = get_db_connection()
-    conn.execute('UPDATE expenses SET archived = 0 WHERE id = ?', (expense_id,))
+    conn.execute('UPDATE expenses SET archived = 0 WHERE id = %s', (expense_id,))
     conn.commit()
     conn.close()
     return redirect(url_for('view_expenses', show_archived='true'))
+
+
 
 
 
@@ -6407,7 +6584,7 @@ def bulk_archive_expenses():
     
     # Archive expenses older than cutoff date
     result = conn.execute(
-        'UPDATE expenses SET archived = 1 WHERE date < ? AND archived = 0',
+        'UPDATE expenses SET archived = 1 WHERE date < %s AND archived = 0',
         (cutoff_date.strftime('%Y-%m-%d'),)
     )
     archived_count = result.rowcount
@@ -6416,6 +6593,8 @@ def bulk_archive_expenses():
     conn.close()
     
     return redirect(url_for('view_expenses', success=f'Archived {archived_count} expenses older than {months} months'))
+
+
 
 
 
@@ -6433,6 +6612,8 @@ def bulk_unarchive_expenses():
     conn.close()
     
     return redirect(url_for('view_expenses', success=f'Unarchived {unarchived_count} expenses'))
+
+
 
 
 
@@ -6457,7 +6638,7 @@ def auto_generate_budget():
     expenses = conn.execute('''
         SELECT category_id, subcategory_id, amount, date
         FROM expenses
-        WHERE date >= ? AND date <= ?
+        WHERE date >= %s AND date <= %s
         ORDER BY date
     ''', (start_date.isoformat(), today.isoformat())).fetchall()
     
@@ -6490,7 +6671,7 @@ def auto_generate_budget():
         monthly_avg = total / months_analyzed
         
         # Get category name
-        category = conn.execute('SELECT name FROM categories WHERE id = ?', (category_id,)).fetchone()
+        category = conn.execute('SELECT name FROM categories WHERE id = %s', (category_id,)).fetchone()
         
         if category:
             suggestion = {
@@ -6505,7 +6686,7 @@ def auto_generate_budget():
             # Add subcategory breakdowns
             if category_id in subcategory_totals:
                 for subcat_id, subcat_total in subcategory_totals[category_id].items():
-                    subcat = conn.execute('SELECT name FROM subcategories WHERE id = ?', (subcat_id,)).fetchone()
+                    subcat = conn.execute('SELECT name FROM subcategories WHERE id = %s', (subcat_id,)).fetchone()
                     if subcat:
                         subcat_avg = subcat_total / months_analyzed
                         suggestion['subcategories'].append({
@@ -6544,6 +6725,8 @@ def auto_generate_budget():
                          end_date=today)
 
 
+
+
 @app.route('/budget/apply-suggestions', methods=['POST'])
 @login_required
 def apply_budget_suggestions():
@@ -6568,20 +6751,20 @@ def apply_budget_suggestions():
         
         # Check if budget exists
         existing = conn.execute(
-            'SELECT id FROM budgets WHERE category_id = ? AND subcategory_id IS ?',
+            'SELECT id FROM budgets WHERE category_id = %s AND subcategory_id IS %s',
             (category_id, subcategory_id)
         ).fetchone()
         
         if existing:
             # Update existing
             conn.execute(
-                'UPDATE budgets SET monthly_amount = ?, is_active = 1 WHERE id = ?',
+                'UPDATE budgets SET monthly_amount = %s, is_active = 1 WHERE id = %s',
                 (amount, existing['id'])
             )
         else:
             # Create new
             conn.execute(
-                'INSERT INTO budgets (category_id, subcategory_id, monthly_amount, is_active) VALUES (?, ?, ?, 1)',
+                'INSERT INTO budgets (category_id, subcategory_id, monthly_amount, is_active) VALUES (%s, %s, %s, 1)',
                 (category_id, subcategory_id, amount)
             )
         
@@ -6595,6 +6778,8 @@ def apply_budget_suggestions():
 
 
 
+
+
 @app.route('/split-transaction/<int:expense_id>')
 @login_required
 def split_transaction(expense_id):
@@ -6602,7 +6787,7 @@ def split_transaction(expense_id):
     conn = get_db_connection()
     
     # Get the expense (could be parent or child of existing split)
-    expense = conn.execute('SELECT * FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    expense = conn.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     
     if not expense:
         return redirect(url_for('view_expenses', error='Expense not found'))
@@ -6610,7 +6795,7 @@ def split_transaction(expense_id):
     # If this is a child, get the parent instead
     if expense['is_split'] == 2:
         parent_id = expense['parent_transaction_id']
-        expense = conn.execute('SELECT * FROM expenses WHERE id = ?', (parent_id,)).fetchone()
+        expense = conn.execute('SELECT * FROM expenses WHERE id = %s', (parent_id,)).fetchone()
         expense_id = parent_id
     
     # Get categories, subcategories, vendors, tax_rates
@@ -6624,13 +6809,13 @@ def split_transaction(expense_id):
     if expense['is_split'] == 1:
         splits = conn.execute(
             '''SELECT * FROM expenses 
-               WHERE parent_transaction_id = ? 
+               WHERE parent_transaction_id = %s 
                ORDER BY id''',
             (expense_id,)
         ).fetchall()
     
     # Get source name
-    source = conn.execute('SELECT * FROM sources WHERE id = ?', (expense['source_id'],)).fetchone()
+    source = conn.execute('SELECT * FROM sources WHERE id = %s', (expense['source_id'],)).fetchone()
     
     conn.close()
     
@@ -6644,6 +6829,8 @@ def split_transaction(expense_id):
                          tax_rates=tax_rates)
 
 
+
+
 @app.route('/save-split-transaction/<int:expense_id>', methods=['POST'])
 @login_required
 def save_split_transaction(expense_id):
@@ -6653,7 +6840,7 @@ def save_split_transaction(expense_id):
     conn = get_db_connection()
     
     # Get original expense
-    original = conn.execute('SELECT * FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    original = conn.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     
     if not original:
         return redirect(url_for('view_expenses', error='Expense not found'))
@@ -6683,10 +6870,10 @@ def save_split_transaction(expense_id):
     print(f"DEBUG: Validation passed! Proceeding to save...")
     
     # Delete existing splits if any
-    conn.execute('DELETE FROM expenses WHERE parent_transaction_id = ?', (expense_id,))
+    conn.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
     
     # Mark original as parent
-    conn.execute('UPDATE expenses SET is_split = 1 WHERE id = ?', (expense_id,))
+    conn.execute('UPDATE expenses SET is_split = 1 WHERE id = %s', (expense_id,))
     
     # Create split transactions
     for split in splits:
@@ -6708,7 +6895,7 @@ def save_split_transaction(expense_id):
         conn.execute(
             '''INSERT INTO expenses 
                (date, description, amount, subtotal, tax_rate_id, tax_amount, category_id, subcategory_id, vendor_id, source_id, notes, parent_transaction_id, is_split, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, CURRENT_TIMESTAMP)''',
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 2, CURRENT_TIMESTAMP)''',
             (original['date'],
              original['description'],
              total_with_tax,
@@ -6730,6 +6917,8 @@ def save_split_transaction(expense_id):
     return redirect(url_for('view_expenses', success=f'Transaction split into {len([s for s in splits if s.get("amount")])} parts'))
 
 
+
+
 @app.route('/reset-split/<int:expense_id>', methods=['POST'])
 @login_required
 def reset_split(expense_id):
@@ -6737,15 +6926,17 @@ def reset_split(expense_id):
     conn = get_db_connection()
     
     # Delete all child splits
-    conn.execute('DELETE FROM expenses WHERE parent_transaction_id = ?', (expense_id,))
+    conn.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
     
     # Mark parent as normal transaction
-    conn.execute('UPDATE expenses SET is_split = 0 WHERE id = ?', (expense_id,))
+    conn.execute('UPDATE expenses SET is_split = 0 WHERE id = %s', (expense_id,))
     
     conn.commit()
     conn.close()
     
     return redirect(url_for('view_expenses', success='Split transaction reset to single transaction'))
+
+
 
 
 
@@ -6771,7 +6962,7 @@ def cleanup_orphaned_splits():
     if orphans:
         # Delete orphaned transactions
         for orphan in orphans:
-            conn.execute('DELETE FROM expenses WHERE id = ?', (orphan['id'],))
+            conn.execute('DELETE FROM expenses WHERE id = %s', (orphan['id'],))
         
         conn.commit()
         count = len(orphans)
@@ -6786,13 +6977,15 @@ def cleanup_orphaned_splits():
 
 
 
+
+
 @app.route('/view-receipt/<int:expense_id>')
 @login_required
 def view_receipt(expense_id):
     """View receipt file"""
     from flask import send_file
     conn = get_db_connection()
-    expense = conn.execute('SELECT receipt_path FROM expenses WHERE id = ?', (expense_id,)).fetchone()
+    expense = conn.execute('SELECT receipt_path FROM expenses WHERE id = %s', (expense_id,)).fetchone()
     conn.close()
     
     if expense and expense['receipt_path']:
@@ -6802,6 +6995,8 @@ def view_receipt(expense_id):
             return "Receipt file not found", 404
     else:
         return "No receipt attached", 404
+
+
 
 
 
@@ -6831,6 +7026,8 @@ def pending_reimbursements():
     return render_template('pending_reimbursements.html',
                          pending=pending,
                          total_pending=total_pending)
+
+
 
 
 
@@ -6944,153 +7141,8 @@ def pending_reimbursements_pdf():
 
 
 
-@app.route('/mobile-capture', methods=['GET', 'POST'])
-def mobile_capture():
-    """Mobile expense capture page"""
-    if request.method == 'POST':
-        try:
-            from datetime import datetime
-            
-            # Get form data
-            amount = float(request.form['amount'])
-            vendor = request.form.get('vendor', '')
-            category = request.form.get('category', '')
-            subcategory = request.form.get('subcategory', '')
-            notes = request.form.get('notes', '')
-            
-            # Handle receipt photo
-            receipt_url = ''
-            if 'receipt' in request.files:
-                file = request.files['receipt']
-                if file and file.filename:
-                    from werkzeug.utils import secure_filename
-                    filename = f"mobile_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secure_filename(file.filename)}"
-                    filepath = os.path.join('receipts', filename)
-                    file.save(filepath)
-                    receipt_url = filename
-            
-            # Add to Google Sheet
-            sheet = get_google_sheet()
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            sheet.append_row([timestamp, amount, vendor, category, subcategory, notes, receipt_url, 'pending'])
-            
-            return redirect(url_for('mobile_capture', success='Expense saved!'))
-        except Exception as e:
-            print(f"Error saving to Google Sheet: {e}")
-            return redirect(url_for('mobile_capture', error=str(e)))
-    
-    # GET - show form
-    conn = get_db_connection()
-    categories = conn.execute('SELECT id, name FROM categories ORDER BY name').fetchall()
-    subcategories = conn.execute('SELECT id, name, category_id FROM subcategories ORDER BY name').fetchall()
-    vendors = conn.execute('SELECT id, name FROM vendors ORDER BY name').fetchall()
-    conn.close()
-    
-    return render_template('mobile_capture.html',
-                         categories=categories,
-                         subcategories=subcategories,
-                         vendors=vendors)
 
-
-
-@app.route('/import-pending')
-@login_required
-def import_pending():
-    """Show pending expenses from Google Sheet"""
-    try:
-        sheet = get_google_sheet()
-        rows = sheet.get_all_values()
-        
-        # Skip header row, get pending expenses
-        pending = []
-        for i, row in enumerate(rows[1:], start=2):  # Start at row 2 (after header)
-            if len(row) >= 8 and row[7] == 'pending':
-                pending.append({
-                    'row_number': i,
-                    'timestamp': row[0],
-                    'amount': row[1],
-                    'vendor': row[2],
-                    'category': row[3],
-                    'subcategory': row[4],
-                    'notes': row[5],
-                    'receipt': row[6],
-                    'status': row[7]
-                })
-        
-        # Get categories, subcategories, vendors, sources for editing
-        conn = get_db_connection()
-        categories = conn.execute('SELECT * FROM categories ORDER BY name').fetchall()
-        subcategories = conn.execute('SELECT * FROM subcategories ORDER BY name').fetchall()
-        vendors = conn.execute('SELECT * FROM vendors ORDER BY name').fetchall()
-        sources = conn.execute('SELECT * FROM sources ORDER BY name').fetchall()
-        conn.close()
-        
-        return render_template('import_pending.html',
-                             pending=pending,
-                             categories=categories,
-                             subcategories=subcategories,
-                             vendors=vendors,
-                             sources=sources)
-    except Exception as e:
-        import traceback
-        print(f"Error loading pending expenses: {e}")
-        print(f"Full traceback:")
-        traceback.print_exc()
-        return f"Error: {e}<br><br>Check terminal for details", 500
-
-@app.route('/import-expense/<int:row_number>', methods=['POST'])
-@login_required
-def import_expense(row_number):
-    """Import a single expense from Google Sheet"""
-    try:
-        from datetime import datetime
-        
-        # Get data from form (allow editing before import)
-        date = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
-        amount = float(request.form['amount'])
-        source_id = request.form['source_id']
-        description = request.form.get('description', '')
-        category_id = request.form['category_id']
-        subcategory_id = request.form.get('subcategory_id') or None
-        vendor_id = request.form.get('vendor_id') or None
-        notes = request.form.get('notes', '')
-        receipt_filename = request.form.get('receipt', '')
-        
-        # Import to database
-        print(f"DEBUG IMPORT: About to insert with mobile flag = 1")
-        print(f"DEBUG IMPORT: Amount = {amount}, Description = {description}")
-        conn = get_db_connection()
-        conn.execute('''
-            INSERT INTO expenses (date, source_id, description, category_id, 
-                                subcategory_id, vendor_id, amount, notes, receipt_path, 
-                                imported_from_mobile, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-        ''', (date, source_id, description, category_id, subcategory_id, 
-              vendor_id, amount, notes, f'receipts/{receipt_filename}' if receipt_filename else None))
-        print(f"DEBUG IMPORT: Insert completed!")
-        conn.commit()
-        conn.close()
-        
-        # Mark as imported in Google Sheet
-        sheet = get_google_sheet()
-        sheet.update_cell(row_number, 8, 'imported')  # Column H (Status)
-        
-        return redirect(url_for('import_pending', success=f'Imported expense ${amount:.2f}'))
-    except Exception as e:
-        print(f"Error importing expense: {e}")
-        return redirect(url_for('import_pending', error=str(e)))
-
-@app.route('/delete-pending/<int:row_number>', methods=['POST'])
-@login_required
-def delete_pending(row_number):
-    """Delete a pending expense from Google Sheet"""
-    try:
-        sheet = get_google_sheet()
-        sheet.delete_rows(row_number)
-        return redirect(url_for('import_pending', success='Expense deleted'))
-    except Exception as e:
-        print(f"Error deleting pending expense: {e}")
-        return redirect(url_for('import_pending', error=str(e)))
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)

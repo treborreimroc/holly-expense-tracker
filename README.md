@@ -1,18 +1,20 @@
-# Holly's Expense Tracker
+# Holly's Expense Tracker - PostgreSQL Version
 
-Full-featured expense tracking application built with Flask.
+Deployed on Railway.app with PostgreSQL database.
 
 ## Features
-- Income & Expense Tracking
-- Budget Management
-- Split Transactions
-- Receipt Attachments
-- P&L Reports
-- CSV Import
-- Recurring Transactions
-- Debt Tracking
+- Complete expense & income tracking
+- Budget management
+- Split transactions
+- Receipt attachments  
+- P&L reports with tax breakdown
+- CSV import (CIBC, Royal Bank)
+- Recurring transactions
+- Debt tracking
+- Reimbursable expense tracking
 
-## Deployment
-Hosted on Render.com
+## Login
+Password: admin123
 
-Login password: admin123
+## Database
+PostgreSQL on Railway

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debt Payoff Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            padding: 8px 15px;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        .no-debts {
+            text-align: center;
+            color: #999;
+            padding: 40px;
+            font-style: italic;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-box {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 1.8em;
+            font-weight: bold;
+        }
+
+        .method-card {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+
+        .method-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .method-stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .method-stat {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .method-stat-label {
+            font-size: 0.85em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .method-stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .comparison {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 15px;
+            text-align: center;
+        }
+
+        .comparison-text {
+            font-size: 1.1em;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .savings-highlight {
+            font-size: 1.3em;
+            color: #f5576c;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .method-stats {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💳 Debt Payoff Tracker</h1>
+
+        <div class="main-grid">
+            <!-- Add Debt Card -->
+            <div class="card">
+                <h2>Add New Debt</h2>
+                <form id="debtForm">
+                    <div class="form-group">
+                        <label for="debtName">Debt Name</label>
+                        <input type="text" id="debtName" placeholder="e.g., Credit Card, Car Loan" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="balance">Current Balance ($)</label>
+                        <input type="number" id="balance" step="0.01" min="0" placeholder="5000.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="interestRate">Interest Rate (%)</label>
+                        <input type="number" id="interestRate" step="0.01" min="0" placeholder="18.99" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="minPayment">Minimum Payment ($)</label>
+                        <input type="number" id="minPayment" step="0.01" min="0" placeholder="100.00" required>
+                    </div>
+                    <button type="submit">Add Debt</button>
+                </form>
+            </div>
+
+            <!-- Total Available Payment Card -->
+            <div class="card">
+                <h2>Monthly Payment Budget</h2>
+                <div class="form-group">
+                    <label for="totalPayment">Total Monthly Payment ($)</label>
+                    <input type="number" id="totalPayment" step="0.01" min="0" placeholder="500.00" value="0">
+                </div>
+                <button onclick="calculatePayoff()">Calculate Payoff Plans</button>
+
+                <div class="stats-grid" style="margin-top: 30px;">
+                    <div class="stat-box">
+                        <div class="stat-label">Total Debt</div>
+                        <div class="stat-value" id="totalDebt">$0</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-label">Total Min. Payment</div>
+                        <div class="stat-value" id="totalMinPayment">$0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Current Debts Table -->
+            <div class="card full-width">
+                <h2>Current Debts</h2>
+                <div id="debtsTableContainer">
+                    <div class="no-debts">No debts added yet. Add your first debt above!</div>
+                </div>
+            </div>
+
+            <!-- Payoff Strategies -->
+            <div class="card full-width" id="payoffStrategies" style="display: none;">
+                <h2>Payoff Strategies Comparison</h2>
+                
+                <div class="method-card" style="background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);">
+                    <h3>❄️ Snowball Method (Smallest Balance First)</h3>
+                    <p style="margin-bottom: 15px; color: #666;">Pay off smallest debts first for quick psychological wins</p>
+                    <div class="method-stats">
+                        <div class="method-stat">
+                            <div class="method-stat-label">Payoff Time</div>
+                            <div class="method-stat-value" id="snowballTime">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">Total Interest</div>
+                            <div class="method-stat-value" id="snowballInterest">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">Total Paid</div>
+                            <div class="method-stat-value" id="snowballTotal">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">First Debt Paid</div>
+                            <div class="method-stat-value" id="snowballFirst">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="method-card" style="background: linear-gradient(135deg, #a29bfe 0%, #6c5ce7 100%); color: white;">
+                    <h3 style="color: white;">🏔️ Avalanche Method (Highest Interest First)</h3>
+                    <p style="margin-bottom: 15px; opacity: 0.9;">Pay off highest interest debts first to save the most money</p>
+                    <div class="method-stats">
+                        <div class="method-stat">
+                            <div class="method-stat-label">Payoff Time</div>
+                            <div class="method-stat-value" id="avalancheTime">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">Total Interest</div>
+                            <div class="method-stat-value" id="avalancheInterest">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">Total Paid</div>
+                            <div class="method-stat-value" id="avalancheTotal">-</div>
+                        </div>
+                        <div class="method-stat">
+                            <div class="method-stat-label">First Debt Paid</div>
+                            <div class="method-stat-value" id="avalancheFirst">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="comparison">
+                    <div class="comparison-text" id="comparisonText">-</div>
+                    <div class="savings-highlight" id="savingsAmount">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let debts = [];
+        let nextId = 1;
+
+        // Add debt
+        document.getElementById('debtForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const debt = {
+                id: nextId++,
+                name: document.getElementById('debtName').value,
+                balance: parseFloat(document.getElementById('balance').value),
+                interestRate: parseFloat(document.getElementById('interestRate').value),
+                minPayment: parseFloat(document.getElementById('minPayment').value)
+            };
+
+            debts.push(debt);
+            updateDebtsTable();
+            updateTotals();
+            this.reset();
+        });
+
+        function removeDebt(id) {
+            debts = debts.filter(d => d.id !== id);
+            updateDebtsTable();
+            updateTotals();
+            document.getElementById('payoffStrategies').style.display = 'none';
+        }
+
+        function updateDebtsTable() {
+            const container = document.getElementById('debtsTableContainer');
+            
+            if (debts.length === 0) {
+                container.innerHTML = '<div class="no-debts">No debts added yet. Add your first debt above!</div>';
+                return;
+            }
+
+            let html = '<table><thead><tr><th>Debt Name</th><th>Balance</th><th>Interest Rate</th><th>Min. Payment</th><th>Action</th></tr></thead><tbody>';
+            
+            debts.forEach(debt => {
+                html += `
+                    <tr>
+                        <td><strong>${debt.name}</strong></td>
+                        <td>$${debt.balance.toFixed(2)}</td>
+                        <td>${debt.interestRate.toFixed(2)}%</td>
+                        <td>$${debt.minPayment.toFixed(2)}</td>
+                        <td><button class="btn-danger" onclick="removeDebt(${debt.id})">Remove</button></td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function updateTotals() {
+            const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
+            const totalMin = debts.reduce((sum, debt) => sum + debt.minPayment, 0);
+            
+            document.getElementById('totalDebt').textContent = `$${totalDebt.toFixed(2)}`;
+            document.getElementById('totalMinPayment').textContent = `$${totalMin.toFixed(2)}`;
+        }
+
+        function calculatePayoff() {
+            if (debts.length === 0) {
+                alert('Please add at least one debt first!');
+                return;
+            }
+
+            const totalPayment = parseFloat(document.getElementById('totalPayment').value) || 0;
+            const totalMinPayment = debts.reduce((sum, debt) => sum + debt.minPayment, 0);
+
+            if (totalPayment < totalMinPayment) {
+                alert(`Your total monthly payment ($${totalPayment.toFixed(2)}) is less than the sum of minimum payments ($${totalMinPayment.toFixed(2)}). Please increase your budget.`);
+                return;
+            }
+
+            // Calculate Snowball Method
+            const snowballResult = calculateSnowball(totalPayment);
+            
+            // Calculate Avalanche Method
+            const avalancheResult = calculateAvalanche(totalPayment);
+
+            // Display results
+            displayResults(snowballResult, avalancheResult);
+        }
+
+        function calculateSnowball(totalPayment) {
+            const debtsCopy = debts.map(d => ({...d})).sort((a, b) => a.balance - b.balance);
+            return simulatePayoff(debtsCopy, totalPayment);
+        }
+
+        function calculateAvalanche(totalPayment) {
+            const debtsCopy = debts.map(d => ({...d})).sort((a, b) => b.interestRate - a.interestRate);
+            return simulatePayoff(debtsCopy, totalPayment);
+        }
+
+        function simulatePayoff(debtsArray, totalPayment) {
+            let month = 0;
+            let totalInterestPaid = 0;
+            let activeDebts = debtsArray.map(d => ({...d}));
+            let firstDebtPayoffMonth = null;
+
+            while (activeDebts.length > 0 && month < 600) {
+                month++;
+
+                // Calculate interest for all debts
+                activeDebts.forEach(debt => {
+                    const monthlyRate = debt.interestRate / 100 / 12;
+                    const interest = debt.balance * monthlyRate;
+                    debt.balance += interest;
+                    totalInterestPaid += interest;
+                });
+
+                // Distribute payments
+                let remainingPayment = totalPayment;
+
+                // Pay minimums on all debts
+                for (let debt of activeDebts) {
+                    const payment = Math.min(debt.minPayment, debt.balance, remainingPayment);
+                    debt.balance -= payment;
+                    remainingPayment -= payment;
+                }
+
+                // Apply extra payment to priority debt
+                if (remainingPayment > 0 && activeDebts.length > 0) {
+                    const priorityDebt = activeDebts[0];
+                    const extraPayment = Math.min(remainingPayment, priorityDebt.balance);
+                    priorityDebt.balance -= extraPayment;
+                }
+
+                // Remove paid off debts
+                const initialCount = activeDebts.length;
+                activeDebts = activeDebts.filter(d => d.balance > 0.01);
+                
+                if (activeDebts.length < initialCount && firstDebtPayoffMonth === null) {
+                    firstDebtPayoffMonth = month;
+                }
+            }
+
+            const totalPrincipal = debts.reduce((sum, debt) => sum + debt.balance, 0);
+
+            return {
+                months: month,
+                totalInterest: totalInterestPaid,
+                totalPaid: totalPrincipal + totalInterestPaid,
+                firstDebtPayoff: firstDebtPayoffMonth
+            };
+        }
+
+        function displayResults(snowball, avalanche) {
+            // Snowball
+            document.getElementById('snowballTime').textContent = `${snowball.months} months`;
+            document.getElementById('snowballInterest').textContent = `$${snowball.totalInterest.toFixed(2)}`;
+            document.getElementById('snowballTotal').textContent = `$${snowball.totalPaid.toFixed(2)}`;
+            document.getElementById('snowballFirst').textContent = snowball.firstDebtPayoff ? `${snowball.firstDebtPayoff} months` : '-';
+
+            // Avalanche
+            document.getElementById('avalancheTime').textContent = `${avalanche.months} months`;
+            document.getElementById('avalancheInterest').textContent = `$${avalanche.totalInterest.toFixed(2)}`;
+            document.getElementById('avalancheTotal').textContent = `$${avalanche.totalPaid.toFixed(2)}`;
+            document.getElementById('avalancheFirst').textContent = avalanche.firstDebtPayoff ? `${avalanche.firstDebtPayoff} months` : '-';
+
+            // Comparison
+            const savings = snowball.totalInterest - avalanche.totalInterest;
+            const timeDiff = snowball.months - avalanche.months;
+
+            if (savings > 0) {
+                document.getElementById('comparisonText').textContent = 
+                    `Avalanche method saves you money and pays off ${Math.abs(timeDiff)} month${Math.abs(timeDiff) !== 1 ? 's' : ''} ${timeDiff > 0 ? 'faster' : 'slower'}!`;
+                document.getElementById('savingsAmount').textContent = `💰 Save $${savings.toFixed(2)} in interest`;
+            } else if (savings < 0) {
+                document.getElementById('comparisonText').textContent = 
+                    `Snowball method saves you money and pays off ${Math.abs(timeDiff)} month${Math.abs(timeDiff) !== 1 ? 's' : ''} ${timeDiff < 0 ? 'faster' : 'slower'}!`;
+                document.getElementById('savingsAmount').textContent = `💰 Save $${Math.abs(savings).toFixed(2)} in interest`;
+            } else {
+                document.getElementById('comparisonText').textContent = 'Both methods cost the same!';
+                document.getElementById('savingsAmount').textContent = `Time difference: ${Math.abs(timeDiff)} month${Math.abs(timeDiff) !== 1 ? 's' : ''}`;
+            }
+
+            document.getElementById('payoffStrategies').style.display = 'block';
+        }
+    </script>
+</body>
+</html>

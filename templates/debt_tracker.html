@@ -1,0 +1,383 @@
+{% extends "base.html" %}
+
+{% block title %}Debt Tracker - Expense Tracker{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <div>
+        <h2 style="color: #495057; margin-bottom: 5px;">💳 Debt Tracker</h2>
+        <p style="color: #6c757d; margin: 0;">Track payments and balances for each debt account</p>
+    </div>
+    <div style="display: flex; gap: 10px;">
+        <a href="{{ url_for('payment_history') }}" class="btn btn-primary">💰 Payment History</a>  
+        <a href="{{ url_for('debt_payoff') }}" class="btn btn-primary">📊 Payoff Strategy →</a>
+    </div>
+</div>
+
+<!-- Debt Selector and Add New -->
+<div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+    <div style="display: flex; gap: 15px; align-items: center;">
+        <div style="flex: 1;">
+            <label for="debt_selector" style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Select Debt Account:</label>
+            <select id="debt_selector" onchange="selectDebt(this.value)" style="width: 100%; padding: 12px; border: 2px solid #dee2e6; border-radius: 5px; font-size: 16px;">
+                <option value="">Choose a debt...</option>
+                {% for debt in debts %}
+                <option value="{{ debt.id }}" {% if selected_debt and debt.id == selected_debt.id %}selected{% endif %}>
+                    {{ debt.name }} - ${{ "%.2f"|format(debt.current_balance) }}
+                    {% if debt.include_in_strategy %}✓{% else %}○{% endif %}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div style="padding-top: 28px;">
+            <button onclick="showAddDebtForm()" class="btn btn-primary">+ Add New Debt</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Debt Form (hidden by default) -->
+<div id="debtForm" style="display: none; background: #fff3cd; padding: 25px; border-radius: 10px; margin-bottom: 30px; border: 2px solid #ffc107;">
+    <h3 id="debtFormTitle" style="margin-bottom: 20px; color: #495057;">Add New Debt Account</h3>
+    <form id="debtFormElement" method="POST" action="{{ url_for('add_debt') }}">
+        <input type="hidden" id="debt_id" name="debt_id" value="">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="debt_name">Debt Name *</label>
+                <input type="text" id="debt_name" name="name" required placeholder="e.g., Royal Bank Visa">
+            </div>
+            
+            <div class="form-group">
+                <label for="starting_balance">Starting Balance *</label>
+                <input type="number" id="starting_balance" name="starting_balance" step="0.01" min="0" required placeholder="0.00">
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="interest_rate">Interest Rate (%) *</label>
+                <input type="number" id="interest_rate" name="interest_rate" step="0.01" min="0" max="100" required placeholder="19.99">
+            </div>
+            
+            <div class="form-group">
+                <label for="minimum_payment">Minimum Payment *</label>
+                <input type="number" id="minimum_payment" name="minimum_payment" step="0.01" min="0" required placeholder="50.00">
+            </div>
+            
+            <div class="form-group">
+                <label for="due_day">Payment Due Day (1-31)</label>
+                <input type="number" id="due_day" name="due_day" min="1" max="31" placeholder="15">
+                <small style="display: block; color: #6c757d; margin-top: 5px; font-size: 12px;">
+                    Enter the day of month when payment is due (e.g., 15 for the 15th of each month)
+                </small>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button type="submit" class="btn btn-primary">Save Debt</button>
+            <button type="button" onclick="hideDebtForm()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </form>
+</div>
+
+
+
+{% if selected_debt %}
+<!-- Debt Details Card -->
+<div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px;">
+        <div>
+            <h2 style="margin: 0 0 10px 0;">{{ selected_debt.name }}</h2>
+            <p style="margin: 0; opacity: 0.9;">Account Details</p>
+        </div>
+        <button onclick="editDebt({{ selected_debt.id }}, '{{ selected_debt.name }}', {{ selected_debt.starting_balance }}, {{ selected_debt.interest_rate }}, {{ selected_debt.minimum_payment }}, {{ selected_debt.due_day or 'null' }})" class="btn btn-secondary">Edit</button>
+        <form method="POST" action="{{ url_for('delete_debt_item', debt_id=selected_debt.id) }}" 
+              onsubmit="return confirm('Are you sure you want to delete this debt?');"
+              style="display: inline; margin-left: 10px;">
+    <button type="submit" class="btn btn-danger">🗑️ Delete</button>
+</form>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+        <div>
+            <div style="opacity: 0.8; font-size: 14px; margin-bottom: 5px;">Current Balance</div>
+            <div style="font-size: 32px; font-weight: bold;">${{ "%.2f"|format(selected_debt.current_balance) }}</div>
+        </div>
+        <div>
+            <div style="opacity: 0.8; font-size: 14px; margin-bottom: 5px;">Starting Balance</div>
+            <div style="font-size: 24px; font-weight: 600;">${{ "%.2f"|format(selected_debt.starting_balance) }}</div>
+        </div>
+        <div>
+            <div style="opacity: 0.8; font-size: 14px; margin-bottom: 5px;">Interest Rate</div>
+            <div style="font-size: 24px; font-weight: 600;">{{ "%.2f"|format(selected_debt.interest_rate) }}%</div>
+        </div>
+        <div>
+            <div style="opacity: 0.8; font-size: 14px; margin-bottom: 5px;">Minimum Payment</div>
+            <div style="font-size: 24px; font-weight: 600;">${{ "%.2f"|format(selected_debt.minimum_payment) }}</div>
+        </div>
+        {% if selected_debt.due_day %}
+        <div>
+            <div style="opacity: 0.8; font-size: 14px; margin-bottom: 5px;">Next Payment Due</div>
+            <div style="font-size: 24px; font-weight: 600;">
+                {% if selected_debt.next_due_date %}
+                    {{ selected_debt.next_due_date }}
+                {% else %}
+                    Day {{ selected_debt.due_day }} (monthly)
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Period Filter and Summary -->
+<div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div>
+            <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">Filter Period:</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-filter {% if filter_period == 'all' %}active{% endif %}" onclick="filterPeriod('all')">All Time</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'wtd' %}active{% endif %}" onclick="filterPeriod('wtd')">Week</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'mtd' %}active{% endif %}" onclick="filterPeriod('mtd')">Month</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'ytd' %}active{% endif %}" onclick="filterPeriod('ytd')">Year</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'custom' %}active{% endif %}" onclick="showCustomDate()">Custom</button>
+            </div>
+        </div>
+        
+        <button onclick="showAddPaymentForm()" class="btn btn-primary">+ Add Payment</button>
+    </div>
+    
+    <!-- Custom Date Range -->
+    <div id="customDateRange" style="{% if filter_period != 'custom' %}display: none;{% endif %} margin-top: 15px;">
+        <form method="GET" action="{{ url_for('debt_tracker') }}">
+            <input type="hidden" name="debt_id" value="{{ selected_debt.id }}">
+            <input type="hidden" name="period" value="custom">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start_date">Start Date</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date or '' }}">
+                </div>
+                <div class="form-group">
+                    <label for="end_date">End Date</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date or '' }}">
+                </div>
+                <div class="form-group" style="padding-top: 28px;">
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Period Summary -->
+{% if payments %}
+<div style="background: #e8f4f8; padding: 20px; border-radius: 10px; margin-bottom: 30px; border-left: 4px solid #667eea;">
+    <h3 style="margin-bottom: 15px; color: #495057;">
+        {% if filter_period == 'wtd' %}This Week
+        {% elif filter_period == 'mtd' %}This Month
+        {% elif filter_period == 'ytd' %}This Year
+        {% elif filter_period == 'custom' %}Custom Period
+        {% else %}All Time
+        {% endif %} Summary
+    </h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px;">
+        <div>
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Total Paid</div>
+            <div style="font-size: 24px; font-weight: bold; color: #28a745;">${{ "%.2f"|format(summary.total_paid) }}</div>
+        </div>
+        <div>
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Principal Paid</div>
+            <div style="font-size: 24px; font-weight: bold; color: #667eea;">${{ "%.2f"|format(summary.principal_paid) }}</div>
+        </div>
+        <div>
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Interest Paid 💸</div>
+            <div style="font-size: 24px; font-weight: bold; color: #e74c3c;">${{ "%.2f"|format(summary.interest_paid) }}</div>
+        </div>
+        <div>
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Payments</div>
+            <div style="font-size: 24px; font-weight: bold; color: #495057;">{{ summary.payment_count }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Add/Edit Payment Form (hidden by default) -->
+<div id="paymentForm" style="display: none; background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px; border: 2px solid #667eea;">
+    <h3 id="paymentFormTitle" style="margin-bottom: 20px; color: #495057;">Add Payment</h3>
+    <form id="paymentFormElement" method="POST" action="{{ url_for('add_payment') }}">
+        <input type="hidden" name="debt_id" value="{{ selected_debt.id }}">
+        <input type="hidden" id="payment_id" name="payment_id" value="">
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="payment_date">Payment Date *</label>
+                <input type="date" id="payment_date" name="payment_date" required>
+            </div>
+            
+            <div class="form-group">
+                <label for="amount_paid">Amount Paid *</label>
+                <input type="number" id="amount_paid" name="amount_paid" step="0.01" min="0" required placeholder="0.00">
+            </div>
+            
+            <div class="form-group">
+                <label for="interest_charged">Interest Charged *</label>
+                <input type="number" id="interest_charged" name="interest_charged" step="0.01" min="0" required placeholder="0.00" value="0">
+                <small style="color: #6c757d;">Interest charged this period</small>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="payment_notes">Notes</label>
+            <textarea id="payment_notes" name="notes" placeholder="Optional notes..."></textarea>
+        </div>
+        
+        <div style="display: flex; gap: 10px; margin-top: 20px;">
+            <button type="submit" class="btn btn-primary">Save Payment</button>
+            <button type="button" onclick="hidePaymentForm()" class="btn btn-secondary">Cancel</button>
+        </div>
+    </form>
+</div>
+
+<!-- Payment History -->
+<h3 style="margin-bottom: 20px; color: #495057;">Payment History</h3>
+{% if payments %}
+<div style="background: white; border-radius: 10px; overflow: hidden; border: 1px solid #dee2e6;">
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Amount Paid</th>
+                <th>Interest</th>
+                <th>Principal</th>
+                <th>Balance After</th>
+                <th>Notes</th>
+                <th style="text-align: right;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for payment in payments %}
+            <tr>
+                <td>{{ payment.payment_date }}</td>
+                <td style="color: #28a745; font-weight: 600;">${{ "%.2f"|format(payment.amount_paid) }}</td>
+                <td style="color: #e74c3c; font-weight: 600;">${{ "%.2f"|format(payment.interest_charged) }}</td>
+                <td style="color: #667eea; font-weight: 600;">${{ "%.2f"|format(payment.principal_paid) }}</td>
+                <td style="font-weight: 600;">${{ "%.2f"|format(payment.balance_after) }}</td>
+                <td>{{ payment.notes or '-' }}</td>
+                <td style="text-align: right;">
+                    <div class="actions" style="justify-content: flex-end;">
+                        <button onclick="editPayment({{ payment.id }}, '{{ payment.payment_date }}', {{ payment.amount_paid }}, {{ payment.interest_charged }}, '{{ payment.notes or '' }}')" class="btn btn-secondary btn-small">Edit</button>
+                        <form method="POST" action="{{ url_for('delete_payment', payment_id=payment.id) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this payment?');">
+                            <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div style="background: white; border-radius: 10px; padding: 40px; text-align: center; color: #6c757d; border: 1px solid #dee2e6;">
+    No payments recorded yet. Click "Add Payment" to start tracking!
+</div>
+{% endif %}
+
+{% else %}
+<!-- No Debt Selected -->
+<div style="background: white; border-radius: 10px; padding: 60px; text-align: center; color: #6c757d; border: 2px dashed #dee2e6;">
+    <h3 style="margin-bottom: 15px; color: #495057;">No Debt Selected</h3>
+    <p style="margin-bottom: 25px;">Select a debt account from the dropdown above, or add a new debt to get started.</p>
+    <button onclick="showAddDebtForm()" class="btn btn-primary" style="padding: 15px 30px; font-size: 16px;">+ Add Your First Debt</button>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Set today's date as default for payment form
+    document.addEventListener('DOMContentLoaded', function() {
+        const paymentDate = document.getElementById('payment_date');
+        if (paymentDate && !paymentDate.value) {
+            paymentDate.valueAsDate = new Date();
+        }
+    });
+    
+    function selectDebt(debtId) {
+        if (debtId) {
+            window.location.href = "{{ url_for('debt_tracker') }}?debt_id=" + debtId;
+        }
+    }
+    
+    function filterPeriod(period) {
+        const debtId = {{ selected_debt.id if selected_debt else 'null' }};
+        if (debtId) {
+            window.location.href = "{{ url_for('debt_tracker') }}?debt_id=" + debtId + "&period=" + period;
+        }
+    }
+    
+    function showCustomDate() {
+        document.getElementById('customDateRange').style.display = 'block';
+    }
+    
+    // Debt form functions
+    function showAddDebtForm() {
+        document.getElementById('debtForm').style.display = 'block';
+        document.getElementById('debtFormTitle').textContent = 'Add New Debt Account';
+        document.getElementById('debtFormElement').action = "{{ url_for('add_debt') }}";
+        document.getElementById('debt_id').value = '';
+        document.getElementById('debt_name').value = '';
+        document.getElementById('starting_balance').value = '';
+        document.getElementById('interest_rate').value = '';
+        document.getElementById('minimum_payment').value = '';
+        document.getElementById('due_day').value = '';
+        document.getElementById('debt_name').focus();
+    }
+    
+    function editDebt(id, name, startingBalance, interestRate, minPayment, dueDay) {
+        document.getElementById('debtForm').style.display = 'block';
+        document.getElementById('debtFormTitle').textContent = 'Edit Debt Account';
+        document.getElementById('debtFormElement').action = "{{ url_for('edit_debt') }}";
+        document.getElementById('debt_id').value = id;
+        document.getElementById('debt_name').value = name;
+        document.getElementById('starting_balance').value = startingBalance;
+        document.getElementById('interest_rate').value = interestRate;
+        document.getElementById('minimum_payment').value = minPayment;
+        document.getElementById('due_day').value = dueDay || '';
+        document.getElementById('debt_name').focus();
+    }
+    
+    function hideDebtForm() {
+        document.getElementById('debtForm').style.display = 'none';
+    }
+    
+    // Payment form functions
+    function showAddPaymentForm() {
+        document.getElementById('paymentForm').style.display = 'block';
+        document.getElementById('paymentFormTitle').textContent = 'Add Payment';
+        document.getElementById('paymentFormElement').action = "{{ url_for('add_payment') }}";
+        document.getElementById('payment_id').value = '';
+        document.getElementById('payment_date').valueAsDate = new Date();
+        document.getElementById('amount_paid').value = '';
+        document.getElementById('interest_charged').value = '0';
+        document.getElementById('payment_notes').value = '';
+        document.getElementById('amount_paid').focus();
+    }
+    
+    function editPayment(id, date, amount, interest, notes) {
+        document.getElementById('paymentForm').style.display = 'block';
+        document.getElementById('paymentFormTitle').textContent = 'Edit Payment';
+        document.getElementById('paymentFormElement').action = "{{ url_for('edit_payment') }}";
+        document.getElementById('payment_id').value = id;
+        document.getElementById('payment_date').value = date;
+        document.getElementById('amount_paid').value = amount;
+        document.getElementById('interest_charged').value = interest;
+        document.getElementById('payment_notes').value = notes;
+        document.getElementById('amount_paid').focus();
+    }
+    
+    function hidePaymentForm() {
+        document.getElementById('paymentForm').style.display = 'none';
+    }
+</script>
+{% endblock %}

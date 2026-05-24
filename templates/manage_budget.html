@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Manage Budget - Expense Tracker    </div>
+
+{% endblock %}
+
+{% block content %}
+<div style="margin-bottom: 20px;">
+    <a href="{{ url_for('budget') }}" class="btn btn-secondary">← Back to Budget View</a>
+</div>
+
+<div style="text-align: center; margin-bottom: 30px;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+    <h1 style="color: #495057; margin: 0;">💰 Manage Budget</h1>
+    <a href="{{ url_for('auto_generate_budget') }}" class="btn btn-primary" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none;">
+        🤖 Auto-Generate from Spending
+    </a>
+</div>
+    <p style="color: #6c757d; font-size: 18px;">Set monthly budget amounts for your categories and subcategories</p>
+</div>
+
+
+    <!-- Income Budget Section -->
+    <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px;">
+        <h2 style="color: #28a745; margin-bottom: 20px; border-bottom: 3px solid #28a745; padding-bottom: 10px;">
+            💰 Income Budgets
+        </h2>
+        
+        <form method="POST" action="{{ url_for('save_income_budget') }}">
+            <div style="display: grid; gap: 20px;">
+                {% if income_categories %}
+                    {% for income_cat in income_categories %}
+                    <div style="display: grid; grid-template-columns: 1fr 200px; gap: 15px; align-items: center; padding: 15px; background: #f8f9fa; border-radius: 8px;">
+                        <div>
+                            <strong style="color: #495057;">{{ income_cat.category }}</strong>
+                        </div>
+                        <div>
+                            <input type="number" 
+                                   name="income_budget_{{ income_cat.category }}" 
+                                   step="0.01" 
+                                   placeholder="Monthly amount"
+                                   value="{{ income_budget_lookup.get(income_cat.category, '') }}"
+                                   style="width: 100%; padding: 10px; border: 2px solid #28a745; border-radius: 5px;">
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div style="text-align: center; padding: 30px; color: #6c757d;">
+                        <p>No income categories found. Add some income entries first!</p>
+                    </div>
+                {% endif %}
+            </div>
+            
+            {% if income_categories %}
+            <div style="margin-top: 30px; text-align: right;">
+                <button type="submit" class="btn btn-primary" style="background: #28a745; border-color: #28a745; padding: 12px 30px; font-size: 16px;">
+                    💾 Save Income Budgets
+                </button>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+
+    <!-- Expense Budget Section -->
+    <div style="background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #e74c3c; margin-bottom: 20px; border-bottom: 3px solid #e74c3c; padding-bottom: 10px;">
+            💸 Expense Budgets
+        </h2>
+        
+    <form method="POST" action="{{ url_for('save_budget') }}">
+    
+    {% set current_category = namespace(name='') %}
+    {% for category in categories %}
+        
+        <div style="background: white; border-radius: 10px; padding: 25px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+            
+            <!-- Category Header -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 2px solid {{ category.color }};">
+                <h3 style="margin: 0; color: #495057;">
+                    <span class="category-badge" style="background-color: {{ category.color }}; color: white; padding: 8px 15px; border-radius: 20px; font-size: 16px;">
+                        {{ category.name }}
+                    </span>
+                </h3>
+                
+                <!-- Category Level Budget (Optional) -->
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="color: #6c757d; font-size: 14px;">Category Budget (optional):</label>
+                    <div style="position: relative;">
+                        <span style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #6c757d;">$</span>
+                        <input type="number" 
+                               name="budget_cat_{{ category.id }}" 
+                               value="{{ budget_lookup.get((category.id, None), '') }}"
+                               step="0.01" 
+                               min="0"
+                               placeholder="0.00"
+                               style="width: 150px; padding: 8px 8px 8px 25px; border: 2px solid #dee2e6; border-radius: 5px;">
+                    </div>
+                    <span style="color: #6c757d; font-size: 14px;">/month</span>
+                </div>
+            </div>
+            
+            <!-- Subcategories -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 15px;">
+                {% for subcat in subcategories %}
+                    {% if subcat.category_name == category.name %}
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 600; color: #495057;">
+                            {{ subcat.name }}
+                        </label>
+                        <div style="display: flex; align-items: center; gap: 5px;">
+                            <span style="color: #6c757d; font-size: 18px;">$</span>
+                            <input type="number" 
+                                   name="budget_subcat_{{ subcat.id }}" 
+                                   value="{{ budget_lookup.get((category.id, subcat.id), '') }}"
+                                   step="0.01" 
+                                   min="0"
+                                   placeholder="0.00"
+                                   style="flex: 1; padding: 10px; border: 2px solid #dee2e6; border-radius: 5px;">
+                            <span style="color: #6c757d;">/mo</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+            
+        </div>
+        
+    {% endfor %}
+    
+    <!-- Save Button -->
+    <div style="position: sticky; bottom: 20px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 -2px 10px rgba(0,0,0,0.1); text-align: center;">
+        <button type="submit" class="btn btn-primary" style="padding: 15px 50px; font-size: 18px; font-weight: 600;">
+            💾 Save All Budgets
+        </button>
+    </div>
+    
+</form>
+
+<!-- Existing Budgets Summary -->
+{% if budget_lookup %}
+<div style="margin-top: 40px; background: #e8f4f8; padding: 25px; border-radius: 10px;">
+    <h3 style="margin-bottom: 20px; color: #495057;">📊 Current Budget Summary</h3>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px;">
+        {% set total_monthly = namespace(amount=0) %}
+        {% for key, amount in budget_lookup.items() %}
+            {% set total_monthly.amount = total_monthly.amount + amount %}
+        {% endfor %}
+        
+        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Total Monthly Budget</div>
+            <div style="font-size: 32px; font-weight: bold; color: #667eea;">${{ "%.2f"|format(total_monthly.amount) }}</div>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Quarterly Budget</div>
+            <div style="font-size: 32px; font-weight: bold; color: #667eea;">${{ "%.2f"|format(total_monthly.amount * 3) }}</div>
+        </div>
+        <div style="background: white; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="color: #6c757d; font-size: 14px; margin-bottom: 5px;">Annual Budget</div>
+            <div style="font-size: 32px; font-weight: bold; color: #667eea;">${{ "%.2f"|format(total_monthly.amount * 12) }}</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+    </div>
+
+{% endblock %}

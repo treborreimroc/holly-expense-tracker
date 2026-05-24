@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Help & Training - Expense Tracker{% endblock %}
+
+{% block content %}
+<div style="max-width: 1000px; margin: 0 auto;">
+    <div style="text-align: center; margin-bottom: 40px;">
+        <h1 style="color: #495057; margin-bottom: 10px;">💡 Help & Training</h1>
+        <p style="color: #6c757d; font-size: 18px;">Your guide to mastering the Expense Tracker</p>
+    </div>
+
+    {% for sw in sections_with_items %}
+        {% set section = sw['section'] %}
+        {% set items = sw['items'] %}
+        
+        {% if section.is_special_style %}
+        <!-- Special styled sections (Quick Start & Tips) -->
+        <div style="background: {% if section.section_key == 'quickstart' %}linear-gradient(135deg, #667eea 0%, #764ba2 100%){% else %}#d4edda{% endif %}; 
+                    color: {% if section.section_key == 'quickstart' %}white{% else %}#155724{% endif %}; 
+                    padding: 30px; border-radius: 10px; margin-bottom: 30px;
+                    {% if section.section_key == 'tips' %}border: 2px solid #28a745;{% endif %}">
+            <h2 style="margin: 0 0 20px 0;">{{ section.title }}</h2>
+            <div style="display: grid; gap: 15px;">
+                {% for item in items %}
+                <div style="background: {% if section.section_key == 'quickstart' %}rgba(255,255,255,0.1){% else %}white{% endif %}; 
+                            padding: 15px; border-radius: 8px; position: relative;">
+                    <a href="{{ url_for('edit_help_item', item_id=item.id) }}" 
+                       class="btn btn-small"
+                       style="position: absolute; top: 10px; right: 10px; 
+                              background: rgba(108, 117, 125, 0.2); color: {% if section.section_key == 'quickstart' %}white{% else %}#495057{% endif %}; 
+                              border: 1px solid rgba(108, 117, 125, 0.3); font-size: 12px; padding: 5px 10px;">
+                        ✏️
+                    </a>
+                    <strong style="font-size: 15px;">{{ item.title }}</strong>
+                    <div style="margin-top: 8px; {% if section.section_key == 'quickstart' %}opacity: 0.9{% endif %}">
+                        {{ item.content|safe }}
+                    </div>
+                    {% if item.image_path %}
+                    <img src="{{ url_for('static', filename=item.image_path) }}" 
+                         style="max-width: 100%; border-radius: 8px; margin-top: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.2);" 
+                         alt="{{ item.title }}">
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        
+        {% else %}
+        <!-- Regular collapsible sections -->
+        <details style="margin-bottom: 20px; border: 2px solid #e9ecef; border-radius: 8px; padding: 15px;">
+            <summary style="font-size: 18px; font-weight: 600; color: #495057; cursor: pointer;">
+                {{ section.title }}
+            </summary>
+            <div style="margin-top: 15px;">
+                {% for item in items %}
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 15px; position: relative; border: 1px solid #dee2e6;">
+                    <a href="{{ url_for('edit_help_item', item_id=item.id) }}" 
+                       class="btn btn-small btn-secondary"
+                       style="position: absolute; top: 10px; right: 10px; font-size: 12px; padding: 5px 10px;">
+                        ✏️
+                    </a>
+                    <h4 style="margin: 0 0 10px 0; color: #495057; padding-right: 60px;">{{ item.title }}</h4>
+                    <div style="color: #6c757d; line-height: 1.6;">
+                        {{ item.content|safe }}
+                    </div>
+                    {% if item.image_path %}
+                    <img src="{{ url_for('static', filename=item.image_path) }}" 
+                         style="max-width: 100%; border-radius: 8px; margin-top: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);" 
+                         alt="{{ item.title }}">
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </details>
+        {% endif %}
+    {% endfor %}
+
+</div>
+
+<style>
+    details summary {
+        padding: 10px;
+        background: #f8f9fa;
+        border-radius: 5px;
+    }
+    details[open] summary {
+        margin-bottom: 15px;
+        background: #e9ecef;
+    }
+    details summary:hover {
+        background: #e9ecef;
+    }
+</style>
+
+{% endblock %}

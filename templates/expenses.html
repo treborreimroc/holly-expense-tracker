@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Expenses - Expense Tracker{% endblock %}
+
+{% block content %}
+<div class="total-box">
+    <h3>Total Expenses</h3>
+    <div class="amount">${{ "%.2f"|format(total_expenses) }}</div>
+</div>
+
+<div style="background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px;">
+    <h2 style="margin-bottom: 20px; color: #495057;">Add New Expense</h2>
+    <form action="{{ url_for('add_expense') }}" method="POST">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="date">Date *</label>
+                <input type="date" id="date" name="date" required value="{{ today }}">
+            </div>
+            
+            <div class="form-group">
+                <label for="source_id">Source *</label>
+                <select id="source_id" name="source_id" required>
+                    <option value="">Select Source...</option>
+                    {% for source in sources %}
+                    <option value="{{ source.id }}">{{ source.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="description">Description</label>
+            <input type="text" id="description" name="description" placeholder="e.g., Weekly groceries">
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="category_id">Category *</label>
+                <select id="category_id" name="category_id" required>
+                    <option value="">Select Category...</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}">{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="subcategory_id">Subcategory</label>
+                <select id="subcategory_id" name="subcategory_id">
+                    <option value="">Select Category First...</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="form-row">
+            <div class="form-group">
+                <label for="vendor_id">Vendor</label>
+                <select id="vendor_id" name="vendor_id">
+                    <option value="">Select Vendor...</option>
+                    {% for vendor in vendors %}
+                    <option value="{{ vendor.id }}">{{ vendor.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="amount">Amount *</label>
+                <input type="number" id="amount" name="amount" step="0.01" min="0" required placeholder="0.00">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" placeholder="Optional notes..."></textarea>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Add Expense</button>
+    </form>
+</div>
+
+<!-- Filter Section -->
+<div style="background: #fff; padding: 25px; border-radius: 10px; margin-bottom: 30px; border: 2px solid #667eea;">
+    <h2 style="margin-bottom: 20px; color: #495057;">📊 Filter Expenses</h2>
+    <form method="GET" action="{{ url_for('expenses') }}" id="filterForm">
+        <!-- Quick Date Filters -->
+        <div style="margin-bottom: 20px;">
+            <label style="display: block; margin-bottom: 10px; font-weight: 600; color: #495057;">Quick Filters:</label>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-filter {% if filter_period == 'all' %}active{% endif %}" onclick="setFilter('all')">All Time</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'wtd' %}active{% endif %}" onclick="setFilter('wtd')">Week to Date</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'mtd' %}active{% endif %}" onclick="setFilter('mtd')">Month to Date</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'ytd' %}active{% endif %}" onclick="setFilter('ytd')">Year to Date</button>
+                <button type="button" class="btn btn-filter {% if filter_period == 'custom' %}active{% endif %}" onclick="setFilter('custom')">Custom Range</button>
+            </div>
+            <input type="hidden" name="period" id="periodInput" value="{{ filter_period }}">
+        </div>
+        
+        <!-- Custom Date Range (shown when Custom is selected) -->
+        <div id="customDateRange" style="{% if filter_period != 'custom' %}display: none;{% endif %} margin-bottom: 20px;">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="start_date">Start Date</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ filter_start_date }}">
+                </div>
+                <div class="form-group">
+                    <label for="end_date">End Date</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ filter_end_date }}">
+                </div>
+            </div>
+        </div>
+        
+        <!-- Dropdown Filters -->
+        <div class="form-row">
+            <div class="form-group">
+                <label for="filter_source">Source</label>
+                <select id="filter_source" name="source" onchange="this.form.submit()">
+                    <option value="">All Sources</option>
+                    {% for source in sources %}
+                    <option value="{{ source.id }}" {% if filter_source == source.id|string %}selected{% endif %}>{{ source.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="filter_category">Category</label>
+                <select id="filter_category" name="category" onchange="this.form.submit()">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}" {% if filter_category == category.id|string %}selected{% endif %}>{{ category.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="filter_vendor">Vendor</label>
+                <select id="filter_vendor" name="vendor" onchange="this.form.submit()">
+                    <option value="">All Vendors</option>
+                    {% for vendor in vendors %}
+                    <option value="{{ vendor.id }}" {% if filter_vendor == vendor.id|string %}selected{% endif %}>{{ vendor.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        
+        <!-- Search and Amount Range -->
+        <div class="form-row">
+            <div class="form-group">
+                <label for="filter_search">Search Description/Notes</label>
+                <input type="text" id="filter_search" name="search" value="{{ filter_search }}" placeholder="Search...">
+            </div>
+            
+            <div class="form-group">
+                <label for="filter_min_amount">Min Amount</label>
+                <input type="number" id="filter_min_amount" name="min_amount" step="0.01" value="{{ filter_min_amount }}" placeholder="0.00">
+            </div>
+            
+            <div class="form-group">
+                <label for="filter_max_amount">Max Amount</label>
+                <input type="number" id="filter_max_amount" name="max_amount" step="0.01" value="{{ filter_max_amount }}" placeholder="0.00">
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="{{ url_for('expenses') }}" class="btn btn-secondary">Clear All Filters</a>
+        </div>
+    </form>
+</div>
+
+<!-- Filter Summary -->
+{% if filtered_count < expenses|length or filter_period != 'all' or filter_source or filter_category or filter_vendor or filter_search or filter_min_amount or filter_max_amount %}
+<div style="background: #e8f4f8; padding: 15px; border-radius: 5px; margin-bottom: 20px; border-left: 4px solid #667eea;">
+    <strong>📈 Filtered Results:</strong> Showing {{ filtered_count }} expense{{ 's' if filtered_count != 1 else '' }} totaling <strong>${{ "%.2f"|format(filtered_total) }}</strong>
+    {% if filter_period != 'all' %}
+        <span class="filter-tag">
+            {% if filter_period == 'wtd' %}Week to Date
+            {% elif filter_period == 'mtd' %}Month to Date
+            {% elif filter_period == 'ytd' %}Year to Date
+            {% elif filter_period == 'custom' %}Custom Range{% endif %}
+        </span>
+    {% endif %}
+    {% if filter_source %}<span class="filter-tag">Source Filter</span>{% endif %}
+    {% if filter_category %}<span class="filter-tag">Category Filter</span>{% endif %}
+    {% if filter_vendor %}<span class="filter-tag">Vendor Filter</span>{% endif %}
+    {% if filter_search %}<span class="filter-tag">Search: "{{ filter_search }}"</span>{% endif %}
+</div>
+{% endif %}
+
+<h2 style="margin-bottom: 20px; color: #495057;">Recent Expenses</h2>
+
+{% if expenses %}
+<div style="overflow-x: auto;">
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Source</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Subcategory</th>
+                <th>Vendor</th>
+                <th>Amount</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for expense in expenses %}
+            <tr>
+                <td>{{ expense.date }}</td>
+                <td>{{ expense.source_name }}</td>
+                <td>
+                    {{ expense.description }}
+                    {% if expense.notes %}
+                    <br><small style="color: #6c757d;">{{ expense.notes }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="category-badge" style="background-color: {{ expense.category_color }}">
+                        {{ expense.category_name }}
+                    </span>
+                </td>
+                <td>{{ expense.subcategory_name or '-' }}</td>
+                <td>{{ expense.vendor_name or '-' }}</td>
+                <td class="amount">${{ "%.2f"|format(expense.amount) }}</td>
+                <td>
+                    <div class="actions">
+                        <a href="{{ url_for('edit_expense', expense_id=expense.id) }}" class="btn btn-secondary btn-small">Edit</a>
+                        <form action="{{ url_for('delete_expense', expense_id=expense.id) }}" method="POST" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete this expense?');">
+                            <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<p style="text-align: center; color: #6c757d; padding: 40px;">
+    No expenses recorded yet. Add your first expense above!
+</p>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Set today's date as default
+    document.getElementById('date').valueAsDate = new Date();
+    
+    // Handle category change to load subcategories (for Add Expense form)
+    document.getElementById('category_id').addEventListener('change', function() {
+        const categoryId = this.value;
+        const subcategorySelect = document.getElementById('subcategory_id');
+        
+        // Clear current options
+        subcategorySelect.innerHTML = '<option value="">Loading...</option>';
+        
+        if (!categoryId) {
+            subcategorySelect.innerHTML = '<option value="">Select Category First...</option>';
+            return;
+        }
+        
+        // Fetch subcategories for selected category
+        fetch(`/api/subcategories/${categoryId}`)
+            .then(response => response.json())
+            .then(data => {
+                subcategorySelect.innerHTML = '<option value="">Select Subcategory...</option>';
+                data.forEach(sub => {
+                    const option = document.createElement('option');
+                    option.value = sub.id;
+                    option.textContent = sub.name;
+                    subcategorySelect.appendChild(option);
+                });
+            })
+            .catch(error => {
+                console.error('Error loading subcategories:', error);
+                subcategorySelect.innerHTML = '<option value="">Error loading subcategories</option>';
+            });
+    });
+    
+    // Filter button handling
+    function setFilter(period) {
+        const periodInput = document.getElementById('periodInput');
+        const customDateRange = document.getElementById('customDateRange');
+        const filterForm = document.getElementById('filterForm');
+        
+        periodInput.value = period;
+        
+        // Show/hide custom date range
+        if (period === 'custom') {
+            customDateRange.style.display = 'block';
+        } else {
+            customDateRange.style.display = 'none';
+            // Submit form immediately for quick filters
+            filterForm.submit();
+        }
+    }
+</script>
+{% endblock %}

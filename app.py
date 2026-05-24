@@ -665,82 +665,170 @@ def pnl():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Determine date range
+    # Determine date range for current period
     if view_type == 'month':
         y, m = int(selected_month[:4]), int(selected_month[5:7])
         start_date = f'{y}-{m:02d}-01'
         end_date = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
         period_label = selected_month
+        # Last year same month
+        ly_start = f'{y-1}-{m:02d}-01'
+        ly_end = f'{y}-{m:02d}-01' if m == 12 else f'{y-1}-{m+1:02d}-01' if m < 12 else f'{y}-01-01'
+        ly_end = f'{y-1+1}-01-01' if m == 12 else f'{y-1}-{m+1:02d}-01'
     elif view_type == 'year':
         start_date = f'{selected_year}-01-01'
         end_date = f'{selected_year+1}-01-01'
         period_label = str(selected_year)
+        ly_start = f'{selected_year-1}-01-01'
+        ly_end = f'{selected_year}-01-01'
     else:  # range
         start_date = date_from
         end_date = date_to
         period_label = f'{date_from} to {date_to}'
+        ly_start = ''
+        ly_end = ''
 
-    # Income by category
+    # ---- INCOME ----
     cursor.execute("""
-        SELECT ic.name as category_name, ic.color, SUM(i.amount) as total
+        SELECT ic.name as category_name, ic.color, SUM(i.amount) as actual
         FROM income i
         LEFT JOIN income_categories ic ON i.category_id = ic.id
         WHERE i.archived = 0 AND i.date >= %s AND i.date < %s
-        GROUP BY ic.name, ic.color
-        ORDER BY total DESC
+        GROUP BY ic.name, ic.color ORDER BY actual DESC
     """, (start_date, end_date))
-    income_by_category = cursor.fetchall()
-    total_income = sum(float(r['total']) for r in income_by_category)
+    income_rows = cursor.fetchall()
 
-    # Expenses by category with subcategory breakdown
+    # Income budgets for period (use month budget if month view)
+    income_budget_dict = {}
+    if view_type == 'month':
+        cursor.execute("""
+            SELECT ic.name as category_name, ib.amount
+            FROM income_budget ib
+            JOIN income_categories ic ON ib.category_id = ic.id
+            WHERE ib.month = %s
+        """, (selected_month,))
+        for row in cursor.fetchall():
+            income_budget_dict[row['category_name']] = float(row['amount'])
+
+    # Last year income
+    ly_income_dict = {}
+    if ly_start and ly_end:
+        cursor.execute("""
+            SELECT ic.name as category_name, SUM(i.amount) as total
+            FROM income i
+            LEFT JOIN income_categories ic ON i.category_id = ic.id
+            WHERE i.archived = 0 AND i.date >= %s AND i.date < %s
+            GROUP BY ic.name
+        """, (ly_start, ly_end))
+        for row in cursor.fetchall():
+            ly_income_dict[row['category_name']] = float(row['total'])
+
+    income_by_category = []
+    total_income = 0
+    total_income_budget = 0
+    for row in income_rows:
+        cat_name = row['category_name'] or 'Uncategorized'
+        actual = float(row['actual'])
+        budget = income_budget_dict.get(cat_name, 0)
+        ly_amount = ly_income_dict.get(cat_name, 0)
+        income_by_category.append({
+            'category_name': cat_name,
+            'color': row['color'] or '#28a745',
+            'actual': actual,
+            'budget': budget,
+            'ly_amount': ly_amount
+        })
+        total_income += actual
+        total_income_budget += budget
+
+    ly_total_income = sum(ly_income_dict.values())
+
+    # ---- EXPENSES ----
     cursor.execute("""
-        SELECT c.id as category_id, c.name as category_name, c.color, SUM(e.amount) as total
+        SELECT c.id as category_id, c.name as category_name, c.color, SUM(e.amount) as actual
         FROM expenses e
         LEFT JOIN categories c ON e.category_id = c.id
         WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
-        GROUP BY c.id, c.name, c.color
-        ORDER BY total DESC
+        GROUP BY c.id, c.name, c.color ORDER BY actual DESC
     """, (start_date, end_date))
-    cat_rows = cursor.fetchall()
+    exp_rows = cursor.fetchall()
 
-    # Subcategory breakdown per category
+    # Expense budgets
+    exp_budget_dict = {}
+    if view_type == 'month':
+        cursor.execute("""
+            SELECT category_id, amount FROM budget WHERE month = %s
+        """, (selected_month,))
+        for row in cursor.fetchall():
+            exp_budget_dict[row['category_id']] = float(row['amount'])
+
+    # Subcategory actuals
     cursor.execute("""
-        SELECT e.category_id, sc.name, SUM(e.amount) as total
+        SELECT e.category_id, sc.id as sub_id, sc.name, SUM(e.amount) as actual
         FROM expenses e
         LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
-        WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
-        AND e.subcategory_id IS NOT NULL
-        GROUP BY e.category_id, sc.name
-        ORDER BY total DESC
+        WHERE e.archived = 0 AND e.date >= %s AND e.date < %s AND e.subcategory_id IS NOT NULL
+        GROUP BY e.category_id, sc.id, sc.name ORDER BY actual DESC
     """, (start_date, end_date))
-    sub_rows = cursor.fetchall()
+    sub_actuals = cursor.fetchall()
 
-    # Build subcategory lookup
+    # Subcategory budgets
+    sub_budget_dict = {}
+    if view_type == 'month':
+        cursor.execute("SELECT subcategory_id, amount FROM budget_subcategory WHERE month = %s", (selected_month,))
+        for row in cursor.fetchall():
+            sub_budget_dict[row['subcategory_id']] = float(row['amount'])
+
+    # Build sub lookup by category
     sub_lookup = {}
-    for sub in sub_rows:
+    for sub in sub_actuals:
         cat_id = sub['category_id']
         if cat_id not in sub_lookup:
             sub_lookup[cat_id] = []
-        sub_lookup[cat_id].append({'name': sub['name'], 'total': float(sub['total'])})
-
-    # Attach subcategories to categories
-    expenses_by_category = []
-    for row in cat_rows:
-        expenses_by_category.append({
-            'category_name': row['category_name'] or 'Uncategorized',
-            'color': row['color'] or '#6c757d',
-            'total': float(row['total']),
-            'subcategories': sub_lookup.get(row['category_id'], [])
+        sub_lookup[cat_id].append({
+            'name': sub['name'],
+            'actual': float(sub['actual']),
+            'budget': sub_budget_dict.get(sub['sub_id'], 0)
         })
 
-    total_expenses = sum(r['total'] for r in expenses_by_category)
+    # Last year expenses
+    ly_exp_dict = {}
+    if ly_start and ly_end:
+        cursor.execute("""
+            SELECT c.name as category_name, SUM(e.amount) as total
+            FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+            WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
+            GROUP BY c.name
+        """, (ly_start, ly_end))
+        for row in cursor.fetchall():
+            ly_exp_dict[row['category_name']] = float(row['total'])
+
+    expenses_by_category = []
+    total_expenses = 0
+    total_expenses_budget = 0
+    for row in exp_rows:
+        cat_name = row['category_name'] or 'Uncategorized'
+        actual = float(row['actual'])
+        budget = exp_budget_dict.get(row['category_id'], 0)
+        ly_amount = ly_exp_dict.get(cat_name, 0)
+        expenses_by_category.append({
+            'category_name': cat_name,
+            'color': row['color'] or '#6c757d',
+            'actual': actual,
+            'budget': budget,
+            'ly_amount': ly_amount,
+            'subcategories': sub_lookup.get(row['category_id'], [])
+        })
+        total_expenses += actual
+        total_expenses_budget += budget
+
+    ly_total_expenses = sum(ly_exp_dict.values())
     net = total_income - total_expenses
 
-    # Years available for year selector
+    # Years for selector
     cursor.execute("""
         SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM expenses
-        UNION
-        SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM income
+        UNION SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM income
         ORDER BY yr DESC
     """)
     years = [r['yr'] for r in cursor.fetchall()] or [datetime.now().year]
@@ -758,8 +846,12 @@ def pnl():
                          income_by_category=income_by_category,
                          expenses_by_category=expenses_by_category,
                          total_income=total_income,
+                         total_income_budget=total_income_budget,
                          total_expenses=total_expenses,
+                         total_expenses_budget=total_expenses_budget,
                          net=net,
+                         ly_total_income=ly_total_income,
+                         ly_total_expenses=ly_total_expenses,
                          years=years)
 
 if __name__ == '__main__':

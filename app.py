@@ -200,6 +200,73 @@ def manage():
     
     return render_template('manage.html', stats=stats)
 
+
+@app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
+def edit_expense(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    if request.method == 'POST':
+        # Update expense
+        date = request.form.get('date')
+        amount = float(request.form['amount'])
+        source_id = request.form['source_id']
+        description = request.form.get('description', '')
+        category_id = request.form['category_id']
+        subcategory_id = request.form.get('subcategory_id') or None
+        vendor_id = request.form.get('vendor_id') or None
+        notes = request.form.get('notes', '')
+        
+        cursor.execute("""
+            UPDATE expenses 
+            SET date = %s, source_id = %s, description = %s, category_id = %s,
+                subcategory_id = %s, vendor_id = %s, amount = %s, notes = %s
+            WHERE id = %s
+        """, (date, source_id, description, category_id, subcategory_id, 
+              vendor_id, amount, notes, expense_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return redirect(url_for('view_expenses'))
+    
+    # GET - show edit form
+    cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
+    expense = cursor.fetchone()
+    
+    if not expense:
+        cursor.close()
+        conn.close()
+        return "Expense not found", 404
+    
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM subcategories ORDER BY name')
+    subcategories = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY display_order')
+    tax_rates = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('edit_expense.html',
+                         expense=expense,
+                         sources=sources,
+                         categories=categories,
+                         subcategories=subcategories,
+                         vendors=vendors,
+                         tax_rates=tax_rates)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

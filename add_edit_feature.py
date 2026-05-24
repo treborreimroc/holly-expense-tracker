@@ -1,4 +1,89 @@
-{% extends "base.html" %}
+print("Adding Edit Expenses feature...")
+
+with open('app.py', 'r') as f:
+    app_content = f.read()
+
+# Add the edit route before the if __name__ block
+edit_route = '''
+@app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
+def edit_expense(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    if request.method == 'POST':
+        # Update expense
+        date = request.form.get('date')
+        amount = float(request.form['amount'])
+        source_id = request.form['source_id']
+        description = request.form.get('description', '')
+        category_id = request.form['category_id']
+        subcategory_id = request.form.get('subcategory_id') or None
+        vendor_id = request.form.get('vendor_id') or None
+        notes = request.form.get('notes', '')
+        
+        cursor.execute("""
+            UPDATE expenses 
+            SET date = %s, source_id = %s, description = %s, category_id = %s,
+                subcategory_id = %s, vendor_id = %s, amount = %s, notes = %s
+            WHERE id = %s
+        """, (date, source_id, description, category_id, subcategory_id, 
+              vendor_id, amount, notes, expense_id))
+        
+        conn.commit()
+        cursor.close()
+        conn.close()
+        
+        return redirect(url_for('view_expenses'))
+    
+    # GET - show edit form
+    cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
+    expense = cursor.fetchone()
+    
+    if not expense:
+        cursor.close()
+        conn.close()
+        return "Expense not found", 404
+    
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM subcategories ORDER BY name')
+    subcategories = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY display_order')
+    tax_rates = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('edit_expense.html',
+                         expense=expense,
+                         sources=sources,
+                         categories=categories,
+                         subcategories=subcategories,
+                         vendors=vendors,
+                         tax_rates=tax_rates)
+'''
+
+# Insert before if __name__
+marker = "if __name__ == '__main__':"
+pos = app_content.find(marker)
+if pos > 0:
+    app_content = app_content[:pos] + edit_route + '\n' + app_content[pos:]
+    print("✓ Added edit_expense route")
+
+with open('app.py', 'w') as f:
+    f.write(app_content)
+
+# Create edit template
+edit_template = '''{% extends "base.html" %}
 
 {% block title %}Edit Expense{% endblock %}
 
@@ -95,3 +180,30 @@
     </form>
 </div>
 {% endblock %}
+'''
+
+with open('templates/edit_expense.html', 'w') as f:
+    f.write(edit_template)
+print("✓ Created edit_expense.html")
+
+# Update view_expenses.html to add Edit button
+with open('templates/view_expenses.html', 'r') as f:
+    view_content = f.read()
+
+# Add Edit button before Delete
+old_actions = '''                <td>
+                    <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}"'''
+
+new_actions = '''                <td>
+                    <a href="{{ url_for('edit_expense', expense_id=expense.id) }}" 
+                       class="btn btn-primary btn-sm">Edit</a>
+                    <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}"'''
+
+view_content = view_content.replace(old_actions, new_actions)
+
+with open('templates/view_expenses.html', 'w') as f:
+    f.write(view_content)
+print("✓ Updated view_expenses.html with Edit button")
+
+print("\n✅ Edit feature ready!")
+print("Upload: app.py, edit_expense.html, view_expenses.html")

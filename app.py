@@ -4,7 +4,7 @@ from functools import wraps
 from database import get_db_connection, init_database, seed_initial_data
 from datetime import datetime, timedelta
 import os
-
+DB_PATH = os.environ.get('DATABASE_PATH', DB_PATH)
 app = Flask(__name__)
 app.secret_key = 'your-secret-key-change-this-in-production'  # Change this!
 
@@ -44,7 +44,7 @@ def check_login_on_startup():
 
 
 # Initialize database on first run
-if not os.path.exists('expense_tracker.db'):
+if not os.path.exists(DB_PATH):
     init_database()
     seed_initial_data()
 
@@ -4807,7 +4807,7 @@ def admin_restore_backup():
         
         # Path to current database
         current_db = os.path.expanduser('~/Documents/expense_tracker/expense_tracker.db')
-        backup_db = os.path.join(backup_path, 'expense_tracker.db')
+        backup_db = os.path.join(backup_path, DB_PATH)
         
         if not os.path.exists(backup_db):
             return jsonify({'success': False, 'error': 'Database not found in backup'})

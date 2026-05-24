@@ -46,9 +46,6 @@ def check_login_on_startup():
 
 
 # Initialize database on first run
-if not os.path.exists('expense_tracker.db'):
-    
-    seed_initial_data()
 
 # ============================================================================
 # AUTHENTICATION SYSTEM

@@ -55,7 +55,8 @@
                 <select class="form-control" id="subcategory_id" name="subcategory_id">
                     <option value="">None</option>
                     {% for sub in subcategories %}
-                    <option value="{{ sub.id }}"
+                    <option value="{{ sub.id }}" 
+                            data-category="{{ sub.category_id }}"
                             {% if sub.id == expense.subcategory_id %}selected{% endif %}>
                         {{ sub.name }}
                     </option>
@@ -94,4 +95,28 @@
         </div>
     </form>
 </div>
+
+<script>
+// Filter subcategories based on selected category
+function filterSubcategories() {
+    const categoryId = document.getElementById('category_id').value;
+    const subcategorySelect = document.getElementById('subcategory_id');
+    const options = subcategorySelect.querySelectorAll('option[data-category]');
+    
+    // Show/hide based on category
+    options.forEach(opt => {
+        if (!categoryId || opt.getAttribute('data-category') === categoryId) {
+            opt.style.display = 'block';
+        } else {
+            opt.style.display = 'none';
+        }
+    });
+}
+
+// Run on page load
+filterSubcategories();
+
+// Run on category change
+document.getElementById('category_id').addEventListener('change', filterSubcategories);
+</script>
 {% endblock %}

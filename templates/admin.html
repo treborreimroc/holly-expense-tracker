@@ -1,0 +1,355 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Tools - Expense Tracker
+            <!-- Cleanup Orphaned Splits -->
+            <div class="admin-section" style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                <h3 style="color: #495057; margin: 0 0 15px 0;">🧹 Cleanup Orphaned Split Transactions</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">Remove child split transactions whose parent has been deleted.</p>
+                <form method="POST" action="{{ url_for('cleanup_orphaned_splits') }}" 
+                      onsubmit="return confirm('Find and delete orphaned split transactions?');">
+                    <button type="submit" class="btn btn-warning" style="background: #ffc107; border-color: #ffc107; color: #000;">
+                        🧹 Cleanup Orphaned Splits
+                    </button>
+                </form>
+            </div>
+
+{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto;">
+    <h1 style="color: #495057; margin-bottom: 10px;">⚙️ Admin Tools</h1>
+    <p style="color: #6c757d; margin-bottom: 30px;">Manage your database and system settings</p>
+    
+    <!-- Warning Banner -->
+    <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin-bottom: 30px; border-radius: 5px;">
+        <strong>⚠️ Warning:</strong> These actions cannot be undone. Always backup your data before clearing anything!
+        <div style="margin-top: 10px;">
+            <button onclick="backupBeforeClear()" class="btn btn-warning">📦 Create Backup First</button>
+        </div>
+    </div>
+    
+    <!-- Database Statistics -->
+    <div style="background: white; padding: 25px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #495057; margin-bottom: 20px;">📊 Database Statistics</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #1976d2;">{{ stats.expenses }}</div>
+                <div style="color: #666;">Expenses</div>
+            </div>
+            <div style="background: #e8f5e9; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #388e3c;">{{ stats.income }}</div>
+                <div style="color: #666;">Income Entries</div>
+            </div>
+            <div style="background: #fff3e0; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #f57c00;">{{ stats.categories }}</div>
+                <div style="color: #666;">Categories</div>
+            </div>
+            <div style="background: #fce4ec; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #c2185b;">{{ stats.subcategories }}</div>
+                <div style="color: #666;">Subcategories</div>
+            </div>
+            <div style="background: #f3e5f5; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #7b1fa2;">{{ stats.vendors }}</div>
+                <div style="color: #666;">Vendors</div>
+            </div>
+            <div style="background: #e0f2f1; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #00796b;">{{ stats.sources }}</div>
+                <div style="color: #666;">Sources</div>
+            </div>
+            <div style="background: #ede7f6; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #5e35b1;">{{ stats.debts }}</div>
+                <div style="color: #666;">Debt Accounts</div>
+            </div>
+            <div style="background: #ffebee; padding: 15px; border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #d32f2f;">{{ stats.debt_payments }}</div>
+                <div style="color: #666;">Debt Payments</div>
+            </div>
+        </div>
+    </div>
+    
+
+    <!-- Restore from Backup -->
+    <div style="background: white; padding: 25px; border-radius: 10px; margin-bottom: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #495057; margin-bottom: 20px;">📦 Restore from Backup</h2>
+        
+        {% if backups %}
+        <p style="color: #6c757d; margin-bottom: 20px;">
+            Found {{ backups|length }} recent backup(s). Click to restore your data from a backup.
+        </p>
+        
+        <div style="display: grid; gap: 15px;">
+            {% for backup in backups %}
+            <div style="border: 2px solid {% if loop.first %}#28a745{% else %}#dee2e6{% endif %}; 
+                        padding: 20px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center;
+                        background: {% if loop.first %}#f0f9f4{% else %}white{% endif %};">
+                <div>
+                    <div style="font-weight: bold; color: #495057; margin-bottom: 5px;">
+                        {% if loop.first %}📌 {% endif %}{{ backup.name }}
+                        {% if loop.first %}<span style="color: #28a745; font-size: 12px;">(Latest)</span>{% endif %}
+                    </div>
+                    <div style="color: #6c757d; font-size: 14px;">
+                        {{ backup.date }} • {{ backup.size }}
+                    </div>
+                </div>
+                <button onclick="confirmRestore('{{ backup.path }}')" 
+                        class="btn {% if loop.first %}btn-success{% else %}btn-secondary{% endif %}">
+                    ♻️ Restore
+                </button>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div style="background: #fff3cd; padding: 20px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 48px; margin-bottom: 10px;">📦</div>
+            <div style="color: #856404; font-weight: 500; margin-bottom: 10px;">No backups found</div>
+            <div style="color: #856404; font-size: 14px;">
+                Run <code style="background: #ffc107; padding: 3px 8px; border-radius: 3px;">backup</code> in your terminal to create one
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Clear Data Options -->
+    <div style="background: white; padding: 25px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+        <h2 style="color: #495057; margin-bottom: 20px;">🗑️ Clear Data</h2>
+        
+        <div style="display: grid; gap: 20px;">
+            
+            <!-- Clear Transactions Only -->
+            <div style="border: 2px solid #dee2e6; padding: 20px; border-radius: 8px;">
+                <h3 style="color: #495057; margin-bottom: 10px;">Clear Transactions Only</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    Removes all expenses and income entries. Keeps categories, subcategories, vendors, sources, and debts.
+                </p>
+                <button onclick="confirmClear('transactions')" class="btn btn-warning">
+                    🗑️ Clear Transactions ({{ stats.expenses + stats.income }} items)
+                </button>
+            </div>
+            
+            <!-- Clear Expenses Only -->
+            <div style="border: 2px solid #dee2e6; padding: 20px; border-radius: 8px;">
+                <h3 style="color: #495057; margin-bottom: 10px;">Clear Expenses Only</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    Removes all expense entries. Keeps income, categories, vendors, and all other data.
+                </p>
+                <button onclick="confirmClear('expenses')" class="btn btn-warning">
+                    🗑️ Clear Expenses ({{ stats.expenses }} items)
+                </button>
+            </div>
+            
+            <!-- Clear Income Only -->
+            <div style="border: 2px solid #dee2e6; padding: 20px; border-radius: 8px;">
+                <h3 style="color: #495057; margin-bottom: 10px;">Clear Income Only</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    Removes all income entries. Keeps expenses, categories, and all other data.
+                </p>
+                <button onclick="confirmClear('income')" class="btn btn-warning">
+                    🗑️ Clear Income ({{ stats.income }} items)
+                </button>
+            </div>
+            
+            <!-- Clear Debt Data -->
+            <div style="border: 2px solid #dee2e6; padding: 20px; border-radius: 8px;">
+                <h3 style="color: #495057; margin-bottom: 10px;">Clear Debt Tracking Data</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    Removes all debt accounts and payment history. Keeps expenses and income.
+                </p>
+                <button onclick="confirmClear('debts')" class="btn btn-warning">
+                    🗑️ Clear Debts ({{ stats.debts }} accounts, {{ stats.debt_payments }} payments)
+                </button>
+            </div>
+            
+            <!-- Clear Categories/Lists -->
+            <div style="border: 2px solid #dee2e6; padding: 20px; border-radius: 8px;">
+                <h3 style="color: #495057; margin-bottom: 10px;">Clear Categories & Lists</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    Removes categories, subcategories, vendors, and sources. Keeps transaction data.
+                </p>
+                <button onclick="confirmClear('lists')" class="btn btn-warning">
+                    🗑️ Clear Lists ({{ stats.categories + stats.subcategories + stats.vendors + stats.sources }} items)
+                </button>
+            </div>
+            
+            <!-- Nuclear Option -->
+            <div style="border: 3px solid #dc3545; padding: 20px; border-radius: 8px; background: #fff5f5;">
+                <h3 style="color: #dc3545; margin-bottom: 10px;">💣 Reset Everything</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">
+                    <strong>Complete database wipe!</strong> Removes ALL data - expenses, income, categories, debts, everything. 
+                    This gives a completely fresh start.
+                </p>
+                <button onclick="confirmClear('everything')" class="btn btn-danger">
+                    💣 RESET EVERYTHING (Complete Wipe)
+                </button>
+            </div>
+            
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+     background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: white; padding: 30px; border-radius: 10px; max-width: 500px; width: 90%;">
+        <h2 style="color: #dc3545; margin-bottom: 20px;">⚠️ Confirm Action</h2>
+        <p id="confirmMessage" style="margin-bottom: 20px; color: #495057;"></p>
+        
+        <div style="background: #fff3cd; padding: 15px; margin-bottom: 20px; border-radius: 5px;">
+            <strong>Type DELETE to confirm:</strong>
+            <input type="text" id="confirmInput" placeholder="Type DELETE" 
+                   style="width: 100%; padding: 10px; margin-top: 10px; border: 2px solid #ffc107; border-radius: 5px;">
+        </div>
+        
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+            <button onclick="closeConfirmModal()" class="btn btn-secondary">Cancel</button>
+            <button onclick="executeClearing()" class="btn btn-danger" id="confirmBtn" disabled>
+                Confirm Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+
+            <!-- Cleanup Orphaned Splits -->
+            <div class="admin-section" style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                <h3 style="color: #495057; margin: 0 0 15px 0;">🧹 Cleanup Orphaned Split Transactions</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">Remove child split transactions whose parent has been deleted.</p>
+                <form method="POST" action="{{ url_for('cleanup_orphaned_splits') }}" 
+                      onsubmit="return confirm('Find and delete orphaned split transactions?');">
+                    <button type="submit" class="btn btn-warning" style="background: #ffc107; border-color: #ffc107; color: #000;">
+                        🧹 Cleanup Orphaned Splits
+                    </button>
+                </form>
+            </div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let clearType = '';
+
+function backupBeforeClear() {
+    alert('Please run the backup command in your terminal before clearing data:\n\nbackup');
+}
+
+function confirmClear(type) {
+    clearType = type;
+    const modal = document.getElementById('confirmModal');
+    const message = document.getElementById('confirmMessage');
+    
+    const messages = {
+        'transactions': 'Delete ALL expenses and income? This will remove {{ stats.expenses + stats.income }} transaction records.',
+        'expenses': 'Delete ALL {{ stats.expenses }} expense records? Income and other data will be kept.',
+        'income': 'Delete ALL {{ stats.income }} income records? Expenses and other data will be kept.',
+        'debts': 'Delete ALL {{ stats.debts }} debt accounts and {{ stats.debt_payments }} payment records?',
+        'lists': 'Delete ALL categories, subcategories, vendors, and sources ({{ stats.categories + stats.subcategories + stats.vendors + stats.sources }} items)?',
+        'everything': '💣 DELETE EVERYTHING? This will completely wipe your entire database! All expenses, income, categories, debts - EVERYTHING will be gone!'
+    };
+    
+    message.textContent = messages[type];
+    modal.style.display = 'flex';
+    
+    // Reset input
+    document.getElementById('confirmInput').value = '';
+    document.getElementById('confirmBtn').disabled = true;
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    clearType = '';
+}
+
+// Enable confirm button when DELETE is typed
+document.getElementById('confirmInput').addEventListener('input', function() {
+    const btn = document.getElementById('confirmBtn');
+    btn.disabled = this.value !== 'DELETE';
+});
+
+function executeClearing() {
+    const input = document.getElementById('confirmInput').value;
+    
+    if (input !== 'DELETE') {
+        alert('Please type DELETE to confirm');
+        return;
+    }
+    
+    // Show loading
+    document.getElementById('confirmBtn').textContent = 'Clearing...';
+    document.getElementById('confirmBtn').disabled = true;
+    
+    // Send request to server
+    fetch('/admin/clear-data', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            type: clearType
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Data cleared successfully!');
+            window.location.reload();
+        } else {
+            alert('❌ Error: ' + data.error);
+            document.getElementById('confirmBtn').textContent = 'Confirm Delete';
+        }
+    })
+    .catch(error => {
+        alert('❌ Error clearing data: ' + error);
+        document.getElementById('confirmBtn').textContent = 'Confirm Delete';
+    });
+}
+
+// Close modal on ESC
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeConfirmModal();
+    }
+});
+
+function confirmRestore(backupPath) {
+    if (!confirm('⚠️ Restore from backup?\n\nThis will:\n1. Stop the app\n2. Replace ALL current data with backup data\n3. Restart the app\n\nYour CURRENT data will be lost unless you backup first!\n\nContinue?')) {
+        return;
+    }
+    
+    if (!confirm('🚨 FINAL CONFIRMATION\n\nAre you ABSOLUTELY SURE?\n\nThis cannot be undone!')) {
+        return;
+    }
+    
+    // Send restore request
+    fetch('/admin/restore-backup', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({path: backupPath})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Backup restored!\n\n' + data.message + '\n\nRefreshing...');
+            window.location.reload();
+        } else {
+            alert('❌ Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('❌ Restore failed: ' + error);
+    });
+}
+
+</script>
+
+            <!-- Cleanup Orphaned Splits -->
+            <div class="admin-section" style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+                <h3 style="color: #495057; margin: 0 0 15px 0;">🧹 Cleanup Orphaned Split Transactions</h3>
+                <p style="color: #6c757d; margin-bottom: 15px;">Remove child split transactions whose parent has been deleted.</p>
+                <form method="POST" action="{{ url_for('cleanup_orphaned_splits') }}" 
+                      onsubmit="return confirm('Find and delete orphaned split transactions?');">
+                    <button type="submit" class="btn btn-warning" style="background: #ffc107; border-color: #ffc107; color: #000;">
+                        🧹 Cleanup Orphaned Splits
+                    </button>
+                </form>
+            </div>
+
+{% endblock %}

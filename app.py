@@ -1,9 +1,9 @@
-from flask import Flask, render_template, request, redirect, url_for, session, send_file, jsonify, flash
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import psycopg2
 import psycopg2.extras
 from urllib.parse import urlparse
 import bcrypt
-from datetime import datetime, timedelta
+from datetime import datetime
 from functools import wraps
 import os
 
@@ -11,11 +11,9 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
 
 def get_db_connection():
-    """Connect to PostgreSQL database"""
     database_url = os.environ.get('DATABASE_URL')
     if not database_url:
         raise ValueError("DATABASE_URL not set")
-    
     result = urlparse(database_url)
     conn = psycopg2.connect(
         database=result.path[1:],
@@ -43,21 +41,18 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username', 'admin')
         password = request.form['password']
-        
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cursor.execute('SELECT * FROM users WHERE username = %s', (username,))
         user = cursor.fetchone()
         cursor.close()
         conn.close()
-        
         if user and bcrypt.checkpw(password.encode('utf-8'), user['password'].encode('utf-8')):
             session['user_id'] = user['id']
             session['username'] = user['username']
             return redirect(url_for('add_expense'))
         else:
             return render_template('login.html', error='Invalid password')
-    
     return render_template('login.html')
 
 @app.route('/logout')
@@ -66,10 +61,9 @@ def logout():
     return redirect(url_for('login'))
 
 @app.route('/add-expense', methods=['GET', 'POST'])
-@login_required  
+@login_required
 def add_expense():
     if request.method == 'POST':
-        # Get form data
         date = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
         amount = float(request.form['amount'])
         source_id = request.form['source_id']
@@ -78,61 +72,53 @@ def add_expense():
         subcategory_id = request.form.get('subcategory_id') or None
         vendor_id = request.form.get('vendor_id') or None
         notes = request.form.get('notes', '')
-        
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO expenses (date, source_id, description, category_id, 
+            INSERT INTO expenses (date, source_id, description, category_id,
                                 subcategory_id, vendor_id, amount, notes, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        """, (date, source_id, description, category_id, subcategory_id, 
-              vendor_id, amount, notes))
+        """, (date, source_id, description, category_id, subcategory_id, vendor_id, amount, notes))
         conn.commit()
         cursor.close()
         conn.close()
-        
         return redirect(url_for('view_expenses'))
-    
-    # GET request - show form
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
     cursor.execute('SELECT * FROM sources ORDER BY name')
     sources = cursor.fetchall()
-    
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
-    
     cursor.execute('SELECT * FROM subcategories ORDER BY name')
     subcategories = cursor.fetchall()
-    
     cursor.execute('SELECT * FROM vendors ORDER BY name')
     vendors = cursor.fetchall()
-    
-    cursor.execute('SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY display_order')
-    tax_rates = cursor.fetchall()
-    
     cursor.close()
     conn.close()
-    
     today = datetime.now().strftime('%Y-%m-%d')
-    
-    return render_template('add_expense.html', 
-                         sources=sources,
-                         categories=categories,
-                         subcategories=subcategories,
-                         vendors=vendors,
-                         tax_rates=tax_rates,
-                         today=today)
+    return render_template('add_expense.html',
+                         sources=sources, categories=categories,
+                         subcategories=subcategories, vendors=vendors, today=today)
 
 @app.route('/view-expenses')
 @login_required
 def view_expenses():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    cursor.execute("""
-        SELECT e.*, 
+
+    # Get filter parameters
+    filter_date_from = request.args.get('date_from', '')
+    filter_date_to = request.args.get('date_to', '')
+    filter_category = request.args.get('category_id', '')
+    filter_subcategory = request.args.get('subcategory_id', '')
+    filter_vendor = request.args.get('vendor_id', '')
+    filter_source = request.args.get('source_id', '')
+    filter_search = request.args.get('search', '')
+
+    # Build query
+    query = """
+        SELECT e.*,
                s.name as source_name,
                c.name as category_name,
                c.color as category_color,
@@ -144,19 +130,120 @@ def view_expenses():
         LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
         LEFT JOIN vendors v ON e.vendor_id = v.id
         WHERE e.archived = 0
-        ORDER BY e.date DESC, e.created_at DESC
-        LIMIT 100
-    """)
+    """
+    params = []
+
+    if filter_date_from:
+        query += ' AND e.date >= %s'
+        params.append(filter_date_from)
+    if filter_date_to:
+        query += ' AND e.date <= %s'
+        params.append(filter_date_to)
+    if filter_category:
+        query += ' AND e.category_id = %s'
+        params.append(filter_category)
+    if filter_subcategory:
+        query += ' AND e.subcategory_id = %s'
+        params.append(filter_subcategory)
+    if filter_vendor:
+        query += ' AND e.vendor_id = %s'
+        params.append(filter_vendor)
+    if filter_source:
+        query += ' AND e.source_id = %s'
+        params.append(filter_source)
+    if filter_search:
+        query += ' AND (e.description ILIKE %s OR e.notes ILIKE %s)'
+        params.append(f'%{filter_search}%')
+        params.append(f'%{filter_search}%')
+
+    query += ' ORDER BY e.date DESC, e.created_at DESC'
+
+    cursor.execute(query, params)
     expenses = cursor.fetchall()
-    
-    cursor.execute('SELECT SUM(amount) as total FROM expenses WHERE archived = 0')
-    total_result = cursor.fetchone()
-    total = total_result['total'] if total_result['total'] else 0
-    
+
+    # Total for filtered results
+    total = sum(float(e['amount']) for e in expenses)
+
+    # Load filter dropdowns
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name')
+    subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+
     cursor.close()
     conn.close()
-    
-    return render_template('view_expenses.html', expenses=expenses, total=total)
+
+    filters_active = any([filter_date_from, filter_date_to, filter_category,
+                          filter_subcategory, filter_vendor, filter_source, filter_search])
+
+    return render_template('view_expenses.html',
+                         expenses=expenses,
+                         total=total,
+                         categories=categories,
+                         subcategories=subcategories,
+                         vendors=vendors,
+                         sources=sources,
+                         filter_date_from=filter_date_from,
+                         filter_date_to=filter_date_to,
+                         filter_category=filter_category,
+                         filter_subcategory=filter_subcategory,
+                         filter_vendor=filter_vendor,
+                         filter_source=filter_source,
+                         filter_search=filter_search,
+                         filters_active=filters_active)
+
+@app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
+@login_required
+def edit_expense(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if request.method == 'POST':
+        date = request.form.get('date')
+        amount = float(request.form['amount'])
+        source_id = request.form['source_id']
+        description = request.form.get('description', '')
+        category_id = request.form['category_id']
+        subcategory_id = request.form.get('subcategory_id') or None
+        vendor_id = request.form.get('vendor_id') or None
+        notes = request.form.get('notes', '')
+        cursor.execute("""
+            UPDATE expenses
+            SET date = %s, source_id = %s, description = %s, category_id = %s,
+                subcategory_id = %s, vendor_id = %s, amount = %s, notes = %s
+            WHERE id = %s
+        """, (date, source_id, description, category_id, subcategory_id,
+              vendor_id, amount, notes, expense_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for('view_expenses'))
+
+    cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
+    expense = cursor.fetchone()
+    if not expense:
+        cursor.close()
+        conn.close()
+        return "Expense not found", 404
+
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name')
+    subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    return render_template('edit_expense.html',
+                         expense=expense, sources=sources, categories=categories,
+                         subcategories=subcategories, vendors=vendors)
 
 @app.route('/expenses/delete/<int:expense_id>', methods=['POST'])
 @login_required
@@ -167,108 +254,29 @@ def delete_expense(expense_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('view_expenses'))
 
+# ============= MANAGE =============
 @app.route('/manage')
 @login_required
 def manage():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
     cursor.execute('SELECT COUNT(*) as count FROM sources')
     sources_count = cursor.fetchone()['count']
-    
     cursor.execute('SELECT COUNT(*) as count FROM categories')
     categories_count = cursor.fetchone()['count']
-    
     cursor.execute('SELECT COUNT(*) as count FROM vendors')
     vendors_count = cursor.fetchone()['count']
-    
     cursor.execute('SELECT COUNT(*) as count FROM expenses')
     expenses_count = cursor.fetchone()['count']
-    
     cursor.close()
     conn.close()
-    
-    stats = {
-        'sources': sources_count,
-        'categories': categories_count,
-        'vendors': vendors_count,
-        'expenses': expenses_count
-    }
-    
+    stats = {'sources': sources_count, 'categories': categories_count,
+             'vendors': vendors_count, 'expenses': expenses_count}
     return render_template('manage.html', stats=stats)
 
-
-@app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
-@login_required
-def edit_expense(expense_id):
-    conn = get_db_connection()
-    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
-    if request.method == 'POST':
-        # Update expense
-        date = request.form.get('date')
-        amount = float(request.form['amount'])
-        source_id = request.form['source_id']
-        description = request.form.get('description', '')
-        category_id = request.form['category_id']
-        subcategory_id = request.form.get('subcategory_id') or None
-        vendor_id = request.form.get('vendor_id') or None
-        notes = request.form.get('notes', '')
-        
-        cursor.execute("""
-            UPDATE expenses 
-            SET date = %s, source_id = %s, description = %s, category_id = %s,
-                subcategory_id = %s, vendor_id = %s, amount = %s, notes = %s
-            WHERE id = %s
-        """, (date, source_id, description, category_id, subcategory_id, 
-              vendor_id, amount, notes, expense_id))
-        
-        conn.commit()
-        cursor.close()
-        conn.close()
-        
-        return redirect(url_for('view_expenses'))
-    
-    # GET - show edit form
-    cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
-    expense = cursor.fetchone()
-    
-    if not expense:
-        cursor.close()
-        conn.close()
-        return "Expense not found", 404
-    
-    cursor.execute('SELECT * FROM sources ORDER BY name')
-    sources = cursor.fetchall()
-    
-    cursor.execute('SELECT * FROM categories ORDER BY name')
-    categories = cursor.fetchall()
-    
-    cursor.execute('SELECT * FROM subcategories ORDER BY name')
-    subcategories = cursor.fetchall()
-    
-    cursor.execute('SELECT * FROM vendors ORDER BY name')
-    vendors = cursor.fetchall()
-    
-    cursor.execute('SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY display_order')
-    tax_rates = cursor.fetchall()
-    
-    cursor.close()
-    conn.close()
-    
-    return render_template('edit_expense.html',
-                         expense=expense,
-                         sources=sources,
-                         categories=categories,
-                         subcategories=subcategories,
-                         vendors=vendors,
-                         tax_rates=tax_rates)
-
-
-# ============= SOURCES MANAGEMENT =============
+# ---- Sources ----
 @app.route('/manage/sources')
 @login_required
 def manage_sources():
@@ -285,14 +293,12 @@ def manage_sources():
 def add_source():
     name = request.form['name']
     source_type = request.form.get('type', '')
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO sources (name, type) VALUES (%s, %s)', (name, source_type))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_sources'))
 
 @app.route('/manage/sources/delete/<int:source_id>', methods=['POST'])
@@ -304,10 +310,9 @@ def delete_source(source_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_sources'))
 
-# ============= CATEGORIES MANAGEMENT =============
+# ---- Categories ----
 @app.route('/manage/categories')
 @login_required
 def manage_categories():
@@ -324,14 +329,12 @@ def manage_categories():
 def add_category():
     name = request.form['name']
     color = request.form.get('color', '#6c757d')
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO categories (name, color) VALUES (%s, %s)', (name, color))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_categories'))
 
 @app.route('/manage/categories/delete/<int:category_id>', methods=['POST'])
@@ -343,10 +346,9 @@ def delete_category(category_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_categories'))
 
-# ============= VENDORS MANAGEMENT =============
+# ---- Vendors ----
 @app.route('/manage/vendors')
 @login_required
 def manage_vendors():
@@ -362,14 +364,12 @@ def manage_vendors():
 @login_required
 def add_vendor():
     name = request.form['name']
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('INSERT INTO vendors (name) VALUES (%s)', (name,))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_vendors'))
 
 @app.route('/manage/vendors/delete/<int:vendor_id>', methods=['POST'])
@@ -381,48 +381,39 @@ def delete_vendor(vendor_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_vendors'))
 
-# ============= SUBCATEGORIES MANAGEMENT =============
+# ---- Subcategories ----
 @app.route('/manage/subcategories')
 @login_required
 def manage_subcategories():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    
     cursor.execute("""
-        SELECT s.*, c.name as category_name 
+        SELECT s.*, c.name as category_name
         FROM subcategories s
         LEFT JOIN categories c ON s.category_id = c.id
         ORDER BY c.name, s.name
     """)
     subcategories = cursor.fetchall()
-    
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
-    
     cursor.close()
     conn.close()
-    
-    return render_template('manage_subcategories.html', 
-                         subcategories=subcategories,
-                         categories=categories)
+    return render_template('manage_subcategories.html',
+                         subcategories=subcategories, categories=categories)
 
 @app.route('/manage/subcategories/add', methods=['POST'])
 @login_required
 def add_subcategory():
     name = request.form['name']
     category_id = request.form['category_id']
-    
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s)', 
-                  (name, category_id))
+    cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s)', (name, category_id))
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_subcategories'))
 
 @app.route('/manage/subcategories/delete/<int:subcategory_id>', methods=['POST'])
@@ -434,11 +425,9 @@ def delete_subcategory(subcategory_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return redirect(url_for('manage_subcategories'))
 
-
-# ============= QUICK ADD ROUTES =============
+# ============= QUICK ADD =============
 @app.route('/quick-add/source', methods=['POST'])
 @login_required
 def quick_add_source():
@@ -446,8 +435,7 @@ def quick_add_source():
     if name:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO sources (name, type) VALUES (%s, %s) RETURNING id', 
-                      (name, 'Bank Account'))
+        cursor.execute('INSERT INTO sources (name, type) VALUES (%s, %s) RETURNING id', (name, 'Bank Account'))
         new_id = cursor.fetchone()[0]
         conn.commit()
         cursor.close()
@@ -462,8 +450,7 @@ def quick_add_category():
     if name:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO categories (name, color) VALUES (%s, %s) RETURNING id', 
-                      (name, '#6c757d'))
+        cursor.execute('INSERT INTO categories (name, color) VALUES (%s, %s) RETURNING id', (name, '#6c757d'))
         new_id = cursor.fetchone()[0]
         conn.commit()
         cursor.close()
@@ -494,8 +481,7 @@ def quick_add_subcategory():
     if name and category_id:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s) RETURNING id', 
-                      (name, category_id))
+        cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s) RETURNING id', (name, category_id))
         new_id = cursor.fetchone()[0]
         conn.commit()
         cursor.close()

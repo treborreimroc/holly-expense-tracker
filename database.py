@@ -2,8 +2,7 @@ import sqlite3
 from datetime import datetime
 import os
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'expense_tracker.db')
-
+DB_PATH = os.environ.get('DATABASE_PATH', 'expense_tracker.db')
 def get_db_connection():
     """Create a database connection"""
     conn = sqlite3.connect(DB_PATH)

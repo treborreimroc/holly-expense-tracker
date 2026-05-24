@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+
+{% block title %}Profit & Loss{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>📑 Profit &amp; Loss Report</h2>
+
+    <!-- Period Selector -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row align-items-end g-2">
+                <div class="col-md-2">
+                    <label class="form-label fw-bold">View By</label>
+                    <select name="view_type" class="form-control" onchange="toggleInputs(this.value)">
+                        <option value="month" {% if view_type == 'month' %}selected{% endif %}>Month</option>
+                        <option value="year" {% if view_type == 'year' %}selected{% endif %}>Full Year</option>
+                        <option value="range" {% if view_type == 'range' %}selected{% endif %}>Date Range</option>
+                    </select>
+                </div>
+
+                <!-- Month picker -->
+                <div class="col-md-2" id="input_month" style="{% if view_type != 'month' %}display:none{% endif %}">
+                    <label class="form-label fw-bold">Month</label>
+                    <input type="month" name="month" class="form-control" value="{{ selected_month }}">
+                </div>
+
+                <!-- Year picker -->
+                <div class="col-md-2" id="input_year" style="{% if view_type != 'year' %}display:none{% endif %}">
+                    <label class="form-label fw-bold">Year</label>
+                    <select name="year" class="form-control">
+                        {% for y in years %}
+                        <option value="{{ y }}" {% if y == selected_year %}selected{% endif %}>{{ y }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Date range pickers -->
+                <div class="col-md-2" id="input_from" style="{% if view_type != 'range' %}display:none{% endif %}">
+                    <label class="form-label fw-bold">From</label>
+                    <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                </div>
+                <div class="col-md-2" id="input_to" style="{% if view_type != 'range' %}display:none{% endif %}">
+                    <label class="form-label fw-bold">To</label>
+                    <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                </div>
+
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">Generate Report</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Income</h6>
+                    <h3 class="text-success">${{ "%.2f"|format(total_income) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center border-danger">
+                <div class="card-body">
+                    <h6 class="text-muted">Total Expenses</h6>
+                    <h3 class="text-danger">${{ "%.2f"|format(total_expenses) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center {% if net >= 0 %}border-success{% else %}border-danger{% endif %}">
+                <div class="card-body">
+                    <h6 class="text-muted">Net {{ 'Surplus' if net >= 0 else 'Deficit' }}</h6>
+                    <h3 class="{% if net >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        ${{ "%.2f"|format(net) }}
+                    </h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Income Breakdown -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white fw-bold">
+                    💵 Income by Category
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Category</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">% of Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in income_by_category %}
+                            <tr>
+                                <td>
+                                    <span class="badge me-1" style="background-color: {{ row.color or '#28a745' }}">
+                                        {{ row.category_name }}
+                                    </span>
+                                </td>
+                                <td class="text-end text-success fw-bold">${{ "%.2f"|format(row.total) }}</td>
+                                <td class="text-end text-muted small">
+                                    {% if total_income > 0 %}
+                                        {{ "%.1f"|format(row.total / total_income * 100) }}%
+                                    {% else %}—{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not income_by_category %}
+                            <tr><td colspan="3" class="text-muted text-center py-3">No income recorded</td></tr>
+                            {% endif %}
+                        </tbody>
+                        <tfoot class="table-success">
+                            <tr>
+                                <th>Total</th>
+                                <th class="text-end">${{ "%.2f"|format(total_income) }}</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Expense Breakdown -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-danger text-white fw-bold">
+                    💸 Expenses by Category
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Category</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">% of Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in expenses_by_category %}
+                            <tr>
+                                <td>
+                                    <span class="badge me-1" style="background-color: {{ row.color or '#6c757d' }}">
+                                        {{ row.category_name }}
+                                    </span>
+                                    {% if row.subcategories %}
+                                    <br>
+                                    {% for sub in row.subcategories %}
+                                    <small class="text-muted ms-3">↳ {{ sub.name }}: ${{ "%.2f"|format(sub.total) }}</small><br>
+                                    {% endfor %}
+                                    {% endif %}
+                                </td>
+                                <td class="text-end text-danger fw-bold">${{ "%.2f"|format(row.total) }}</td>
+                                <td class="text-end text-muted small">
+                                    {% if total_expenses > 0 %}
+                                        {{ "%.1f"|format(row.total / total_expenses * 100) }}%
+                                    {% else %}—{% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            {% if not expenses_by_category %}
+                            <tr><td colspan="3" class="text-muted text-center py-3">No expenses recorded</td></tr>
+                            {% endif %}
+                        </tbody>
+                        <tfoot class="table-danger">
+                            <tr>
+                                <th>Total</th>
+                                <th class="text-end">${{ "%.2f"|format(total_expenses) }}</th>
+                                <th></th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Net Summary Bar -->
+    <div class="card {% if net >= 0 %}border-success{% else %}border-danger{% endif %}">
+        <div class="card-body text-center">
+            <h4 class="mb-0">
+                Net {{ 'Surplus' if net >= 0 else 'Deficit' }}:
+                <span class="{% if net >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    ${{ "%.2f"|format(net) }}
+                </span>
+                <small class="text-muted fs-6 ms-2">
+                    ({{ period_label }})
+                </small>
+            </h4>
+        </div>
+    </div>
+
+</div>
+
+<script>
+function toggleInputs(viewType) {
+    document.getElementById('input_month').style.display = viewType === 'month' ? '' : 'none';
+    document.getElementById('input_year').style.display = viewType === 'year' ? '' : 'none';
+    document.getElementById('input_from').style.display = viewType === 'range' ? '' : 'none';
+    document.getElementById('input_to').style.display = viewType === 'range' ? '' : 'none';
+}
+</script>
+{% endblock %}

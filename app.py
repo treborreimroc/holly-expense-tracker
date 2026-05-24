@@ -651,6 +651,117 @@ def quick_add_income_category():
         return jsonify({'success': True, 'id': new_id, 'name': name})
     return jsonify({'success': False})
 
+
+# ============= P&L REPORT =============
+@app.route('/pnl')
+@login_required
+def pnl():
+    view_type = request.args.get('view_type', 'month')
+    selected_month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    selected_year = int(request.args.get('year', datetime.now().year))
+    date_from = request.args.get('date_from', '')
+    date_to = request.args.get('date_to', '')
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Determine date range
+    if view_type == 'month':
+        y, m = int(selected_month[:4]), int(selected_month[5:7])
+        start_date = f'{y}-{m:02d}-01'
+        end_date = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
+        period_label = selected_month
+    elif view_type == 'year':
+        start_date = f'{selected_year}-01-01'
+        end_date = f'{selected_year+1}-01-01'
+        period_label = str(selected_year)
+    else:  # range
+        start_date = date_from
+        end_date = date_to
+        period_label = f'{date_from} to {date_to}'
+
+    # Income by category
+    cursor.execute("""
+        SELECT ic.name as category_name, ic.color, SUM(i.amount) as total
+        FROM income i
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        WHERE i.archived = 0 AND i.date >= %s AND i.date < %s
+        GROUP BY ic.name, ic.color
+        ORDER BY total DESC
+    """, (start_date, end_date))
+    income_by_category = cursor.fetchall()
+    total_income = sum(float(r['total']) for r in income_by_category)
+
+    # Expenses by category with subcategory breakdown
+    cursor.execute("""
+        SELECT c.id as category_id, c.name as category_name, c.color, SUM(e.amount) as total
+        FROM expenses e
+        LEFT JOIN categories c ON e.category_id = c.id
+        WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
+        GROUP BY c.id, c.name, c.color
+        ORDER BY total DESC
+    """, (start_date, end_date))
+    cat_rows = cursor.fetchall()
+
+    # Subcategory breakdown per category
+    cursor.execute("""
+        SELECT e.category_id, sc.name, SUM(e.amount) as total
+        FROM expenses e
+        LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+        WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
+        AND e.subcategory_id IS NOT NULL
+        GROUP BY e.category_id, sc.name
+        ORDER BY total DESC
+    """, (start_date, end_date))
+    sub_rows = cursor.fetchall()
+
+    # Build subcategory lookup
+    sub_lookup = {}
+    for sub in sub_rows:
+        cat_id = sub['category_id']
+        if cat_id not in sub_lookup:
+            sub_lookup[cat_id] = []
+        sub_lookup[cat_id].append({'name': sub['name'], 'total': float(sub['total'])})
+
+    # Attach subcategories to categories
+    expenses_by_category = []
+    for row in cat_rows:
+        expenses_by_category.append({
+            'category_name': row['category_name'] or 'Uncategorized',
+            'color': row['color'] or '#6c757d',
+            'total': float(row['total']),
+            'subcategories': sub_lookup.get(row['category_id'], [])
+        })
+
+    total_expenses = sum(r['total'] for r in expenses_by_category)
+    net = total_income - total_expenses
+
+    # Years available for year selector
+    cursor.execute("""
+        SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM expenses
+        UNION
+        SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM income
+        ORDER BY yr DESC
+    """)
+    years = [r['yr'] for r in cursor.fetchall()] or [datetime.now().year]
+
+    cursor.close()
+    conn.close()
+
+    return render_template('pnl.html',
+                         view_type=view_type,
+                         selected_month=selected_month,
+                         selected_year=selected_year,
+                         date_from=date_from,
+                         date_to=date_to,
+                         period_label=period_label,
+                         income_by_category=income_by_category,
+                         expenses_by_category=expenses_by_category,
+                         total_income=total_income,
+                         total_expenses=total_expenses,
+                         net=net,
+                         years=years)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

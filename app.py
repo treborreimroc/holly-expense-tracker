@@ -267,6 +267,176 @@ def edit_expense(expense_id):
                          vendors=vendors,
                          tax_rates=tax_rates)
 
+
+# ============= SOURCES MANAGEMENT =============
+@app.route('/manage/sources')
+@login_required
+def manage_sources():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_sources.html', sources=sources)
+
+@app.route('/manage/sources/add', methods=['POST'])
+@login_required
+def add_source():
+    name = request.form['name']
+    source_type = request.form.get('type', '')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO sources (name, type) VALUES (%s, %s)', (name, source_type))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_sources'))
+
+@app.route('/manage/sources/delete/<int:source_id>', methods=['POST'])
+@login_required
+def delete_source(source_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM sources WHERE id = %s', (source_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_sources'))
+
+# ============= CATEGORIES MANAGEMENT =============
+@app.route('/manage/categories')
+@login_required
+def manage_categories():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_categories.html', categories=categories)
+
+@app.route('/manage/categories/add', methods=['POST'])
+@login_required
+def add_category():
+    name = request.form['name']
+    color = request.form.get('color', '#6c757d')
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO categories (name, color) VALUES (%s, %s)', (name, color))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_categories'))
+
+@app.route('/manage/categories/delete/<int:category_id>', methods=['POST'])
+@login_required
+def delete_category(category_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM categories WHERE id = %s', (category_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_categories'))
+
+# ============= VENDORS MANAGEMENT =============
+@app.route('/manage/vendors')
+@login_required
+def manage_vendors():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_vendors.html', vendors=vendors)
+
+@app.route('/manage/vendors/add', methods=['POST'])
+@login_required
+def add_vendor():
+    name = request.form['name']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO vendors (name) VALUES (%s)', (name,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_vendors'))
+
+@app.route('/manage/vendors/delete/<int:vendor_id>', methods=['POST'])
+@login_required
+def delete_vendor(vendor_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM vendors WHERE id = %s', (vendor_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_vendors'))
+
+# ============= SUBCATEGORIES MANAGEMENT =============
+@app.route('/manage/subcategories')
+@login_required
+def manage_subcategories():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cursor.execute("""
+        SELECT s.*, c.name as category_name 
+        FROM subcategories s
+        LEFT JOIN categories c ON s.category_id = c.id
+        ORDER BY c.name, s.name
+    """)
+    subcategories = cursor.fetchall()
+    
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('manage_subcategories.html', 
+                         subcategories=subcategories,
+                         categories=categories)
+
+@app.route('/manage/subcategories/add', methods=['POST'])
+@login_required
+def add_subcategory():
+    name = request.form['name']
+    category_id = request.form['category_id']
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO subcategories (name, category_id) VALUES (%s, %s)', 
+                  (name, category_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_subcategories'))
+
+@app.route('/manage/subcategories/delete/<int:subcategory_id>', methods=['POST'])
+@login_required
+def delete_subcategory(subcategory_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM subcategories WHERE id = %s', (subcategory_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return redirect(url_for('manage_subcategories'))
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

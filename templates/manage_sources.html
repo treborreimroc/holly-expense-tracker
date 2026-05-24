@@ -1,155 +1,58 @@
 {% extends "base.html" %}
-
-{% block title %}Manage Sources - Expense Tracker{% endblock %}
-
+{% block title %}Manage Sources{% endblock %}
 {% block content %}
-<div style="margin-bottom: 20px;">
-    <a href="{{ url_for('manage') }}" class="btn btn-secondary">← Back to Manage Lists</a>
-</div>
-
-<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-    <div>
-        <h2 style="color: #495057; margin-bottom: 5px;">💳 Manage Sources</h2>
-        <p style="color: #6c757d; margin: 0;">Add, edit, or delete payment sources (credit cards, bank accounts, cash, etc.)</p>
+<div class="container mt-4">
+    <h2>Manage Sources</h2>
+    
+    <div class="card mt-4">
+        <div class="card-header">Add New Source</div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('add_source') }}">
+                <div class="row">
+                    <div class="col-md-6">
+                        <input type="text" name="name" class="form-control" placeholder="Source Name" required>
+                    </div>
+                    <div class="col-md-4">
+                        <select name="type" class="form-control">
+                            <option value="">Type (optional)</option>
+                            <option value="Bank Account">Bank Account</option>
+                            <option value="Credit Card">Credit Card</option>
+                            <option value="Cash">Cash</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100">Add</button>
+                    </div>
+                </div>
+            </form>
+        </div>
     </div>
-    <button onclick="showAddForm()" class="btn btn-primary">+ Add New Source</button>
-</div>
-
-<!-- Add/Edit Form (hidden by default) -->
-<div id="sourceForm" style="display: none; background: #f8f9fa; padding: 25px; border-radius: 10px; margin-bottom: 30px; border: 2px solid #667eea;">
-    <h3 id="formTitle" style="margin-bottom: 20px; color: #495057;">Add New Source</h3>
-    <form id="sourceFormElement" method="POST" action="{{ url_for('add_source') }}">
-        <input type="hidden" id="source_id" name="source_id" value="">
-        
-        <div class="form-group">
-            <label for="source_name">Source Name *</label>
-            <input type="text" id="source_name" name="name" required placeholder="e.g., Royal Bank Visa">
-        </div>
-        
-        <div class="form-group">
-            <label for="source_type">Type</label>
-            <select id="source_type" name="type">
-                <option value="">Select Type...</option>
-                <option value="Credit Card">Credit Card</option>
-                <option value="Bank Account">Bank Account</option>
-                <option value="Debit Card">Debit Card</option>
-                <option value="Cash">Cash</option>
-                <option value="Other">Other</option>
-            </select>
-        </div>
-        
-        <div style="display: flex; gap: 10px; margin-top: 20px;">
-            <button type="submit" class="btn btn-primary">Save Source</button>
-            <button type="button" onclick="hideForm()" class="btn btn-secondary">Cancel</button>
-        </div>
-    </form>
-</div>
-
-<!-- Success/Error Messages -->
-{% if success %}
-<div class="alert alert-success">
-    {{ success }}
-</div>
-{% endif %}
-
-{% if error %}
-<div class="alert alert-error">
-    {{ error }}
-</div>
-{% endif %}
-
-<!-- Sources List -->
-<div style="background: white; border-radius: 10px; overflow: hidden; border: 1px solid #dee2e6;">
-    <table>
+    
+    <table class="table table-striped mt-4">
         <thead>
             <tr>
-                <th>Source Name</th>
+                <th>Name</th>
                 <th>Type</th>
-                <th>Expenses Using This</th>
-                <th style="text-align: right;">Actions</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
-            {% if sources %}
-                {% for source in sources %}
-                <tr>
-                    <td><strong>{{ source.name }}</strong></td>
-                    <td>{{ source.type or '-' }}</td>
-                    <td>
-                        {% if source.expense_count > 0 %}
-                            <span style="color: #667eea; font-weight: 600;">{{ source.expense_count }} expense{{ 's' if source.expense_count != 1 else '' }}</span>
-                        {% else %}
-                            <span style="color: #6c757d;">None</span>
-                        {% endif %}
-                    </td>
-                    <td style="text-align: right;">
-                        <div class="actions" style="justify-content: flex-end;">
-                            <button onclick="editSource({{ source.id }}, '{{ source.name }}', '{{ source.type or '' }}')" class="btn btn-secondary btn-small">Edit</button>
-                            <form method="POST" action="{{ url_for('delete_source', source_id=source.id) }}" style="display: inline;" onsubmit="return confirmDelete('{{ source.name }}', {{ source.expense_count }});">
-                                <button type="submit" class="btn btn-danger btn-small">Delete</button>
-                            </form>
-                        </div>
-                    </td>
-                </tr>
-                {% endfor %}
-            {% else %}
-                <tr>
-                    <td colspan="4" style="text-align: center; color: #6c757d; padding: 40px;">
-                        No sources yet. Click "Add New Source" to get started!
-                    </td>
-                </tr>
-            {% endif %}
+            {% for source in sources %}
+            <tr>
+                <td>{{ source.name }}</td>
+                <td>{{ source.type or '-' }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_source', source_id=source.id) }}" 
+                          style="display:inline;"
+                          onsubmit="return confirm('Delete this source?')">
+                        <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
         </tbody>
     </table>
+    
+    <a href="{{ url_for('manage') }}" class="btn btn-secondary">Back to Admin</a>
 </div>
-
-<div style="background: #e8f4f8; padding: 15px; border-radius: 5px; margin-top: 20px; border-left: 4px solid #667eea;">
-    <strong>💡 Tip:</strong> Sources represent where your money comes from (credit cards, bank accounts, cash). You can't delete a source that's being used by expenses - you'll need to reassign or delete those expenses first.
-</div>
-
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    function showAddForm() {
-        document.getElementById('sourceForm').style.display = 'block';
-        document.getElementById('formTitle').textContent = 'Add New Source';
-        document.getElementById('sourceFormElement').action = "{{ url_for('add_source') }}";
-        document.getElementById('source_id').value = '';
-        document.getElementById('source_name').value = '';
-        document.getElementById('source_type').value = '';
-        document.getElementById('source_name').focus();
-    }
-    
-    function editSource(id, name, type) {
-        document.getElementById('sourceForm').style.display = 'block';
-        document.getElementById('formTitle').textContent = 'Edit Source';
-        document.getElementById('sourceFormElement').action = "{{ url_for('edit_source') }}";
-        document.getElementById('source_id').value = id;
-        document.getElementById('source_name').value = name;
-        document.getElementById('source_type').value = type;
-        document.getElementById('source_name').focus();
-    }
-    
-    function hideForm() {
-        document.getElementById('sourceForm').style.display = 'none';
-    }
-    
-    function confirmDelete(name, expenseCount) {
-        if (expenseCount > 0) {
-            return confirm(`Warning: "${name}" is being used by ${expenseCount} expense(s).\n\nDeleting this source will fail unless you first reassign or delete those expenses.\n\nDo you want to try deleting it anyway?`);
-        }
-        return confirm(`Are you sure you want to delete "${name}"?`);
-    }
-    
-    // Auto-hide success/error messages after 5 seconds
-    setTimeout(function() {
-        const alerts = document.querySelectorAll('.alert');
-        alerts.forEach(alert => {
-            alert.style.transition = 'opacity 0.5s';
-            alert.style.opacity = '0';
-            setTimeout(() => alert.remove(), 500);
-        });
-    }, 5000);
-</script>
 {% endblock %}

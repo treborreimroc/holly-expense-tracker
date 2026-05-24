@@ -12,6 +12,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Sources</h5>
                     <p class="card-text display-4">{{ stats.sources }}</p>
+                    <a href="{{ url_for('manage_sources') }}" class="btn btn-primary">Manage</a>
                 </div>
             </div>
         </div>
@@ -20,6 +21,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Categories</h5>
                     <p class="card-text display-4">{{ stats.categories }}</p>
+                    <a href="{{ url_for('manage_categories') }}" class="btn btn-primary">Manage</a>
                 </div>
             </div>
         </div>
@@ -28,6 +30,7 @@
                 <div class="card-body">
                     <h5 class="card-title">Vendors</h5>
                     <p class="card-text display-4">{{ stats.vendors }}</p>
+                    <a href="{{ url_for('manage_vendors') }}" class="btn btn-primary">Manage</a>
                 </div>
             </div>
         </div>
@@ -41,8 +44,8 @@
         </div>
     </div>
     
-    <div class="alert alert-info mt-4">
-        <strong>Note:</strong> This is a minimal version. More admin features coming soon!
+    <div class="mt-4">
+        <a href="{{ url_for('manage_subcategories') }}" class="btn btn-secondary">Manage Subcategories</a>
     </div>
 </div>
 {% endblock %}

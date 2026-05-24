@@ -12,20 +12,16 @@
             <form method="GET" class="row align-items-end g-2">
                 <div class="col-md-3">
                     <label class="form-label fw-bold">Select Month</label>
-                    <input type="month" name="month" class="form-control"
-                           value="{{ selected_month }}">
+                    <input type="month" name="month" class="form-control" value="{{ selected_month }}">
                 </div>
                 <div class="col-md-2">
                     <button type="submit" class="btn btn-primary w-100">View</button>
-                </div>
-                <div class="col-md-4 text-muted small pt-3">
-                    Showing budget for: <strong>{{ selected_month }}</strong>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Summary Bar -->
+    <!-- Summary Cards -->
     <div class="row mb-4">
         <div class="col-md-4">
             <div class="card text-center border-primary">
@@ -56,69 +52,115 @@
     </div>
 
     <!-- Budget Table -->
-    <div class="card">
-        <div class="card-header fw-bold">Category Budgets — {{ selected_month }}</div>
-        <div class="card-body p-0">
-            <table class="table table-hover mb-0">
-                <thead class="table-dark">
-                    <tr>
-                        <th>Category</th>
-                        <th>Budget</th>
-                        <th>Spent</th>
-                        <th>Remaining</th>
-                        <th>Progress</th>
-                        <th>Set Budget</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in budget_rows %}
-                    <tr>
-                        <td>
-                            <span class="badge" style="background-color: {{ row.color }}">
-                                {{ row.category_name }}
-                            </span>
-                        </td>
-                        <td>${{ "%.2f"|format(row.budgeted) }}</td>
-                        <td>${{ "%.2f"|format(row.spent) }}</td>
-                        <td class="fw-bold {% if row.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            ${{ "%.2f"|format(row.remaining) }}
-                        </td>
-                        <td style="min-width: 120px;">
-                            {% if row.budgeted > 0 %}
-                                {% set pct = [(row.spent / row.budgeted * 100), 100]|min %}
-                                <div class="progress" style="height: 20px;">
-                                    <div class="progress-bar {% if pct >= 100 %}bg-danger{% elif pct >= 80 %}bg-warning{% else %}bg-success{% endif %}"
-                                         style="width: {{ pct }}%">
-                                        {{ "%.0f"|format(pct) }}%
-                                    </div>
-                                </div>
-                            {% else %}
-                                <span class="text-muted small">No budget set</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <form method="POST" action="{{ url_for('set_budget') }}" class="d-flex gap-1">
-                                <input type="hidden" name="month" value="{{ selected_month }}">
-                                <input type="hidden" name="category_id" value="{{ row.category_id }}">
-                                <input type="number" step="0.01" name="amount" class="form-control form-control-sm"
-                                       style="width: 100px;"
-                                       value="{{ row.budgeted if row.budgeted > 0 else '' }}"
-                                       placeholder="0.00">
-                                <button type="submit" class="btn btn-sm btn-outline-primary">Set</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
+    <form method="POST" action="{{ url_for('set_budget') }}">
+        <input type="hidden" name="month" value="{{ selected_month }}">
 
-    <!-- Copy budget from previous month -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <strong>Category &amp; Subcategory Budgets — {{ selected_month }}</strong>
+                <button type="submit" class="btn btn-primary btn-sm">💾 Save All Budgets</button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th style="width:30%">Category / Subcategory</th>
+                            <th>Budget</th>
+                            <th>Spent</th>
+                            <th>Remaining</th>
+                            <th style="width:20%">Progress</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for cat in budget_data %}
+
+                        <!-- Category Row -->
+                        <tr class="table-secondary">
+                            <td class="fw-bold">
+                                <span class="badge me-2" style="background-color: {{ cat.color }}">
+                                    {{ cat.category_name }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm" style="width:130px;">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" step="0.01" min="0"
+                                           name="cat_{{ cat.category_id }}"
+                                           class="form-control"
+                                           value="{{ cat.budgeted if cat.budgeted > 0 else '' }}"
+                                           placeholder="0.00">
+                                </div>
+                            </td>
+                            <td class="fw-bold">${{ "%.2f"|format(cat.spent) }}</td>
+                            <td class="fw-bold {% if cat.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ "%.2f"|format(cat.remaining) }}
+                            </td>
+                            <td>
+                                {% if cat.budgeted > 0 %}
+                                    {% set pct = [(cat.spent / cat.budgeted * 100), 100]|min %}
+                                    <div class="progress" style="height:18px;">
+                                        <div class="progress-bar {% if pct >= 100 %}bg-danger{% elif pct >= 80 %}bg-warning{% else %}bg-success{% endif %}"
+                                             style="width:{{ pct }}%">
+                                            {{ "%.0f"|format(pct) }}%
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted small">No budget set</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+
+                        <!-- Subcategory Rows -->
+                        {% for sub in cat.subcategories %}
+                        <tr>
+                            <td class="ps-4 text-muted">
+                                ↳ {{ sub.subcategory_name }}
+                            </td>
+                            <td>
+                                <div class="input-group input-group-sm" style="width:130px;">
+                                    <span class="input-group-text">$</span>
+                                    <input type="number" step="0.01" min="0"
+                                           name="sub_{{ sub.subcategory_id }}"
+                                           class="form-control"
+                                           value="{{ sub.budgeted if sub.budgeted > 0 else '' }}"
+                                           placeholder="0.00">
+                                </div>
+                            </td>
+                            <td>${{ "%.2f"|format(sub.spent) }}</td>
+                            <td class="{% if sub.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                ${{ "%.2f"|format(sub.remaining) }}
+                            </td>
+                            <td>
+                                {% if sub.budgeted > 0 %}
+                                    {% set pct = [(sub.spent / sub.budgeted * 100), 100]|min %}
+                                    <div class="progress" style="height:14px;">
+                                        <div class="progress-bar {% if pct >= 100 %}bg-danger{% elif pct >= 80 %}bg-warning{% else %}bg-success{% endif %}"
+                                             style="width:{{ pct }}%">
+                                            {{ "%.0f"|format(pct) }}%
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted small">—</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer">
+                <button type="submit" class="btn btn-primary">💾 Save All Budgets</button>
+            </div>
+        </div>
+    </form>
+
+    <!-- Copy from previous month -->
     <div class="card mt-4">
         <div class="card-body">
-            <form method="POST" action="{{ url_for('copy_budget') }}" 
-                  onsubmit="return confirm('Copy last month\'s budget to {{ selected_month }}? This will overwrite any budgets already set for this month.')">
+            <form method="POST" action="{{ url_for('copy_budget') }}"
+                  onsubmit="return confirm('Copy previous month\'s budget to {{ selected_month }}?')">
                 <input type="hidden" name="month" value="{{ selected_month }}">
                 <button type="submit" class="btn btn-outline-secondary">
                     📋 Copy Previous Month's Budget to {{ selected_month }}

@@ -3,8 +3,7 @@ import psycopg2
 import psycopg2.extras
 from urllib.parse import urlparse
 import bcrypt
-from datetime import datetime, date
-from dateutil.relativedelta import relativedelta
+from datetime import datetime
 from functools import wraps
 import os
 
@@ -81,27 +80,19 @@ def add_expense():
                                 subcategory_id, vendor_id, amount, notes, created_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """, (date_val, source_id, description, category_id, subcategory_id, vendor_id, amount, notes))
-        conn.commit()
-        cursor.close()
-        conn.close()
+        conn.commit(); cursor.close(); conn.close()
         return redirect(url_for('view_expenses'))
 
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute('SELECT * FROM sources ORDER BY name')
-    sources = cursor.fetchall()
-    cursor.execute('SELECT * FROM categories ORDER BY name')
-    categories = cursor.fetchall()
-    cursor.execute('SELECT * FROM subcategories ORDER BY name')
-    subcategories = cursor.fetchall()
-    cursor.execute('SELECT * FROM vendors ORDER BY name')
-    vendors = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    today = datetime.now().strftime('%Y-%m-%d')
-    return render_template('add_expense.html',
-                         sources=sources, categories=categories,
-                         subcategories=subcategories, vendors=vendors, today=today)
+    cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
+    cursor.close(); conn.close()
+    return render_template('add_expense.html', sources=sources, categories=categories,
+                         subcategories=subcategories, vendors=vendors,
+                         today=datetime.now().strftime('%Y-%m-%d'))
 
 @app.route('/view-expenses')
 @login_required
@@ -126,18 +117,12 @@ def view_expenses():
         WHERE e.archived = 0
     """
     params = []
-    if filter_date_from:
-        query += ' AND e.date >= %s'; params.append(filter_date_from)
-    if filter_date_to:
-        query += ' AND e.date <= %s'; params.append(filter_date_to)
-    if filter_category:
-        query += ' AND e.category_id = %s'; params.append(filter_category)
-    if filter_subcategory:
-        query += ' AND e.subcategory_id = %s'; params.append(filter_subcategory)
-    if filter_vendor:
-        query += ' AND e.vendor_id = %s'; params.append(filter_vendor)
-    if filter_source:
-        query += ' AND e.source_id = %s'; params.append(filter_source)
+    if filter_date_from: query += ' AND e.date >= %s'; params.append(filter_date_from)
+    if filter_date_to: query += ' AND e.date <= %s'; params.append(filter_date_to)
+    if filter_category: query += ' AND e.category_id = %s'; params.append(filter_category)
+    if filter_subcategory: query += ' AND e.subcategory_id = %s'; params.append(filter_subcategory)
+    if filter_vendor: query += ' AND e.vendor_id = %s'; params.append(filter_vendor)
+    if filter_source: query += ' AND e.source_id = %s'; params.append(filter_source)
     if filter_search:
         query += ' AND (e.description ILIKE %s OR e.notes ILIKE %s)'
         params.append(f'%{filter_search}%'); params.append(f'%{filter_search}%')
@@ -145,21 +130,16 @@ def view_expenses():
     cursor.execute(query, params)
     expenses = cursor.fetchall()
     total = sum(float(e['amount']) for e in expenses)
-    cursor.execute('SELECT * FROM categories ORDER BY name')
-    categories = cursor.fetchall()
-    cursor.execute('SELECT * FROM subcategories ORDER BY name')
-    subcategories = cursor.fetchall()
-    cursor.execute('SELECT * FROM vendors ORDER BY name')
-    vendors = cursor.fetchall()
-    cursor.execute('SELECT * FROM sources ORDER BY name')
-    sources = cursor.fetchall()
-    cursor.close()
-    conn.close()
+    cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
+    cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
+    cursor.close(); conn.close()
     filters_active = any([filter_date_from, filter_date_to, filter_category,
                           filter_subcategory, filter_vendor, filter_source, filter_search])
-    return render_template('view_expenses.html',
-                         expenses=expenses, total=total, categories=categories,
-                         subcategories=subcategories, vendors=vendors, sources=sources,
+    return render_template('view_expenses.html', expenses=expenses, total=total,
+                         categories=categories, subcategories=subcategories,
+                         vendors=vendors, sources=sources,
                          filter_date_from=filter_date_from, filter_date_to=filter_date_to,
                          filter_category=filter_category, filter_subcategory=filter_subcategory,
                          filter_vendor=filter_vendor, filter_source=filter_source,
@@ -182,8 +162,7 @@ def edit_expense(expense_id):
         return redirect(url_for('view_expenses'))
     cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
     expense = cursor.fetchone()
-    if not expense:
-        cursor.close(); conn.close(); return "Expense not found", 404
+    if not expense: cursor.close(); conn.close(); return "Expense not found", 404
     cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
     cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
     cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
@@ -225,8 +204,8 @@ def add_income():
     cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
     cursor.execute('SELECT * FROM income_categories ORDER BY name'); income_categories = cursor.fetchall()
     cursor.close(); conn.close()
-    return render_template('add_income.html', sources=sources,
-                         income_categories=income_categories, today=datetime.now().strftime('%Y-%m-%d'))
+    return render_template('add_income.html', sources=sources, income_categories=income_categories,
+                         today=datetime.now().strftime('%Y-%m-%d'))
 
 @app.route('/view-income')
 @login_required
@@ -246,14 +225,10 @@ def view_income():
         WHERE i.archived = 0
     """
     params = []
-    if filter_date_from:
-        query += ' AND i.date >= %s'; params.append(filter_date_from)
-    if filter_date_to:
-        query += ' AND i.date <= %s'; params.append(filter_date_to)
-    if filter_category:
-        query += ' AND i.category_id = %s'; params.append(filter_category)
-    if filter_source:
-        query += ' AND i.source_id = %s'; params.append(filter_source)
+    if filter_date_from: query += ' AND i.date >= %s'; params.append(filter_date_from)
+    if filter_date_to: query += ' AND i.date <= %s'; params.append(filter_date_to)
+    if filter_category: query += ' AND i.category_id = %s'; params.append(filter_category)
+    if filter_source: query += ' AND i.source_id = %s'; params.append(filter_source)
     if filter_search:
         query += ' AND (i.description ILIKE %s OR i.notes ILIKE %s)'
         params.append(f'%{filter_search}%'); params.append(f'%{filter_search}%')
@@ -287,8 +262,7 @@ def edit_income(income_id):
         return redirect(url_for('view_income'))
     cursor.execute('SELECT * FROM income WHERE id = %s', (income_id,))
     income = cursor.fetchone()
-    if not income:
-        cursor.close(); conn.close(); return "Income not found", 404
+    if not income: cursor.close(); conn.close(); return "Income not found", 404
     cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
     cursor.execute('SELECT * FROM income_categories ORDER BY name'); income_categories = cursor.fetchall()
     cursor.close(); conn.close()
@@ -312,54 +286,91 @@ def budget():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Get all categories
+    # Month date range
+    y, m = int(selected_month[:4]), int(selected_month[5:7])
+    month_start = f'{y}-{m:02d}-01'
+    month_end = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
+
+    # All categories
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
 
-    # Get budgets for selected month
+    # All subcategories with their category
+    cursor.execute("""
+        SELECT sc.*, c.name as category_name
+        FROM subcategories sc
+        JOIN categories c ON sc.category_id = c.id
+        ORDER BY c.name, sc.name
+    """)
+    all_subcategories = cursor.fetchall()
+
+    # Budgets for this month — category level
     cursor.execute('SELECT * FROM budget WHERE month = %s', (selected_month,))
-    budgets = {row['category_id']: float(row['amount']) for row in cursor.fetchall()}
+    cat_budgets = {row['category_id']: float(row['amount']) for row in cursor.fetchall()}
 
-    # Get actual spending per category for selected month
-    month_start = selected_month + '-01'
-    # Last day of month
-    y, m = int(selected_month[:4]), int(selected_month[5:7])
-    if m == 12:
-        month_end = f'{y+1}-01-01'
-    else:
-        month_end = f'{y}-{m+1:02d}-01'
+    # Budgets for this month — subcategory level
+    cursor.execute('SELECT * FROM budget_subcategory WHERE month = %s', (selected_month,))
+    sub_budgets = {row['subcategory_id']: float(row['amount']) for row in cursor.fetchall()}
 
+    # Actual spending by category
     cursor.execute("""
         SELECT category_id, SUM(amount) as total
-        FROM expenses
-        WHERE archived = 0 AND date >= %s AND date < %s
+        FROM expenses WHERE archived = 0 AND date >= %s AND date < %s
         GROUP BY category_id
     """, (month_start, month_end))
-    spending = {row['category_id']: float(row['total']) for row in cursor.fetchall()}
+    cat_spending = {row['category_id']: float(row['total']) for row in cursor.fetchall()}
+
+    # Actual spending by subcategory
+    cursor.execute("""
+        SELECT subcategory_id, SUM(amount) as total
+        FROM expenses WHERE archived = 0 AND date >= %s AND date < %s
+        AND subcategory_id IS NOT NULL
+        GROUP BY subcategory_id
+    """, (month_start, month_end))
+    sub_spending = {row['subcategory_id']: float(row['total']) for row in cursor.fetchall()}
 
     cursor.close()
     conn.close()
 
-    budget_rows = []
+    # Build structured data: categories with nested subcategories
+    budget_data = []
     total_budgeted = 0
     total_spent = 0
+
     for cat in categories:
-        budgeted = budgets.get(cat['id'], 0)
-        spent = spending.get(cat['id'], 0)
+        cat_id = cat['id']
+        budgeted = cat_budgets.get(cat_id, 0)
+        spent = cat_spending.get(cat_id, 0)
         remaining = budgeted - spent
-        total_budgeted += budgeted
-        total_spent += spent
-        budget_rows.append({
-            'category_id': cat['id'],
+
+        # Get subcategories for this category
+        subs = []
+        for sub in all_subcategories:
+            if sub['category_id'] == cat_id:
+                sub_budgeted = sub_budgets.get(sub['id'], 0)
+                sub_spent = sub_spending.get(sub['id'], 0)
+                subs.append({
+                    'subcategory_id': sub['id'],
+                    'subcategory_name': sub['name'],
+                    'budgeted': sub_budgeted,
+                    'spent': sub_spent,
+                    'remaining': sub_budgeted - sub_spent
+                })
+
+        budget_data.append({
+            'category_id': cat_id,
             'category_name': cat['name'],
             'color': cat['color'],
             'budgeted': budgeted,
             'spent': spent,
-            'remaining': remaining
+            'remaining': remaining,
+            'subcategories': subs
         })
+        total_budgeted += budgeted
+        total_spent += spent
 
     return render_template('budget.html',
-                         budget_rows=budget_rows,
+                         budget_data=budget_data,
                          selected_month=selected_month,
                          total_budgeted=total_budgeted,
                          total_spent=total_spent)
@@ -368,15 +379,31 @@ def budget():
 @login_required
 def set_budget():
     month = request.form['month']
-    category_id = request.form['category_id']
-    amount = float(request.form.get('amount', 0) or 0)
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO budget (category_id, month, amount)
-        VALUES (%s, %s, %s)
-        ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount
-    """, (category_id, month, amount))
+
+    # Process all form fields
+    for key, value in request.form.items():
+        if key == 'month':
+            continue
+        amount = float(value) if value else 0
+
+        if key.startswith('cat_'):
+            category_id = int(key[4:])
+            cursor.execute("""
+                INSERT INTO budget (category_id, month, amount)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount
+            """, (category_id, month, amount))
+
+        elif key.startswith('sub_'):
+            subcategory_id = int(key[4:])
+            cursor.execute("""
+                INSERT INTO budget_subcategory (subcategory_id, month, amount)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (subcategory_id, month) DO UPDATE SET amount = EXCLUDED.amount
+            """, (subcategory_id, month, amount))
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -386,24 +413,30 @@ def set_budget():
 @login_required
 def copy_budget():
     month = request.form['month']
-    # Calculate previous month
     y, m = int(month[:4]), int(month[5:7])
-    if m == 1:
-        prev_month = f'{y-1}-12'
-    else:
-        prev_month = f'{y}-{m-1:02d}'
+    prev_month = f'{y-1}-12' if m == 1 else f'{y}-{m-1:02d}'
 
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cursor.execute('SELECT * FROM budget WHERE month = %s', (prev_month,))
-    prev_budgets = cursor.fetchall()
 
-    for row in prev_budgets:
+    # Copy category budgets
+    cursor.execute('SELECT * FROM budget WHERE month = %s', (prev_month,))
+    for row in cursor.fetchall():
         cursor.execute("""
             INSERT INTO budget (category_id, month, amount)
             VALUES (%s, %s, %s)
             ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount
         """, (row['category_id'], month, row['amount']))
+
+    # Copy subcategory budgets
+    cursor.execute('SELECT * FROM budget_subcategory WHERE month = %s', (prev_month,))
+    for row in cursor.fetchall():
+        cursor.execute("""
+            INSERT INTO budget_subcategory (subcategory_id, month, amount)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (subcategory_id, month) DO UPDATE SET amount = EXCLUDED.amount
+        """, (row['subcategory_id'], month, row['amount']))
+
     conn.commit()
     cursor.close()
     conn.close()
@@ -420,11 +453,10 @@ def manage():
     cursor.execute('SELECT COUNT(*) as count FROM vendors'); vendors_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM expenses'); expenses_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM income'); income_count = cursor.fetchone()['count']
-    cursor.execute('SELECT COUNT(*) as count FROM income_categories'); income_categories_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM income_categories'); income_cat_count = cursor.fetchone()['count']
     cursor.close(); conn.close()
-    stats = {'sources': sources_count, 'categories': categories_count,
-             'vendors': vendors_count, 'expenses': expenses_count,
-             'income': income_count, 'income_categories': income_categories_count}
+    stats = {'sources': sources_count, 'categories': categories_count, 'vendors': vendors_count,
+             'expenses': expenses_count, 'income': income_count, 'income_categories': income_cat_count}
     return render_template('manage.html', stats=stats)
 
 @app.route('/manage/sources')

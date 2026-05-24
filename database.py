@@ -23,6 +23,7 @@ cursor.execute("DROP TABLE IF EXISTS debts CASCADE")
 cursor.execute("DROP TABLE IF EXISTS recurring_income CASCADE")
 cursor.execute("DROP TABLE IF EXISTS recurring_expenses CASCADE")
 cursor.execute("DROP TABLE IF EXISTS income_budget CASCADE")
+cursor.execute("DROP TABLE IF EXISTS budget_subcategory CASCADE")
 cursor.execute("DROP TABLE IF EXISTS budget CASCADE")
 cursor.execute("DROP TABLE IF EXISTS income CASCADE")
 cursor.execute("DROP TABLE IF EXISTS expenses CASCADE")
@@ -142,6 +143,17 @@ cursor.execute("""
         UNIQUE(category_id, month)
     )
 """)
+
+cursor.execute("""
+    CREATE TABLE budget_subcategory (
+        id SERIAL PRIMARY KEY,
+        subcategory_id INTEGER REFERENCES subcategories(id),
+        month VARCHAR(7) NOT NULL,
+        amount DECIMAL(10,2) NOT NULL,
+        UNIQUE(subcategory_id, month)
+    )
+""")
+
 
 cursor.execute("""
     CREATE TABLE income_budget (

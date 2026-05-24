@@ -1,51 +1,78 @@
 {% extends "base.html" %}
-
 {% block title %}Admin{% endblock %}
-
 {% block content %}
 <div class="container mt-4">
-    <h2>Admin Dashboard</h2>
-    
-    <div class="row mt-4">
-        <div class="col-md-3">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Sources</h5>
-                    <p class="card-text display-4">{{ stats.sources }}</p>
-                    <a href="{{ url_for('manage_sources') }}" class="btn btn-primary">Manage</a>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card">
+    <h2>⚙️ Admin Dashboard</h2>
+
+    <h5 class="mt-4 text-muted">Expenses</h5>
+    <div class="row">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
                 <div class="card-body">
                     <h5 class="card-title">Categories</h5>
-                    <p class="card-text display-4">{{ stats.categories }}</p>
-                    <a href="{{ url_for('manage_categories') }}" class="btn btn-primary">Manage</a>
+                    <p class="display-4">{{ stats.categories }}</p>
+                    <a href="{{ url_for('manage_categories') }}" class="btn btn-primary btn-sm">Manage</a>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Subcategories</h5>
+                    <p class="display-4">—</p>
+                    <a href="{{ url_for('manage_subcategories') }}" class="btn btn-primary btn-sm">Manage</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
                 <div class="card-body">
                     <h5 class="card-title">Vendors</h5>
-                    <p class="card-text display-4">{{ stats.vendors }}</p>
-                    <a href="{{ url_for('manage_vendors') }}" class="btn btn-primary">Manage</a>
+                    <p class="display-4">{{ stats.vendors }}</p>
+                    <a href="{{ url_for('manage_vendors') }}" class="btn btn-primary btn-sm">Manage</a>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
                 <div class="card-body">
-                    <h5 class="card-title">Expenses</h5>
-                    <p class="card-text display-4">{{ stats.expenses }}</p>
+                    <h5 class="card-title">Sources</h5>
+                    <p class="display-4">{{ stats.sources }}</p>
+                    <a href="{{ url_for('manage_sources') }}" class="btn btn-primary btn-sm">Manage</a>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="mt-4">
-        <a href="{{ url_for('manage_subcategories') }}" class="btn btn-secondary">Manage Subcategories</a>
+
+    <h5 class="mt-2 text-muted">Income</h5>
+    <div class="row">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h5 class="card-title">Income Categories</h5>
+                    <p class="display-4">{{ stats.income_categories }}</p>
+                    <a href="{{ url_for('manage_income_categories') }}" class="btn btn-success btn-sm">Manage</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-success">
+                <div class="card-body">
+                    <h5 class="card-title">Income Records</h5>
+                    <p class="display-4">{{ stats.income }}</p>
+                    <a href="{{ url_for('view_income') }}" class="btn btn-success btn-sm">View</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <h5 class="card-title">Expenses</h5>
+                    <p class="display-4">{{ stats.expenses }}</p>
+                    <a href="{{ url_for('view_expenses') }}" class="btn btn-primary btn-sm">View</a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

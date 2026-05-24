@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}View Income{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>📈 Income</h2>
+
+    <!-- Filter Panel -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>🔍 Filter Income</strong>
+            {% if filters_active %}
+            <a href="{{ url_for('view_income') }}" class="btn btn-sm btn-outline-secondary">✕ Clear Filters</a>
+            {% endif %}
+        </div>
+        <div class="card-body">
+            <form method="GET" action="{{ url_for('view_income') }}">
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">Date From</label>
+                        <input type="date" name="date_from" class="form-control form-control-sm"
+                               value="{{ filter_date_from }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label fw-bold small">Date To</label>
+                        <input type="date" name="date_to" class="form-control form-control-sm"
+                               value="{{ filter_date_to }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Category</label>
+                        <select name="category_id" class="form-control form-control-sm">
+                            <option value="">All Categories</option>
+                            {% for cat in income_categories %}
+                            <option value="{{ cat.id }}" {% if filter_category == cat.id|string %}selected{% endif %}>
+                                {{ cat.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Source</label>
+                        <select name="source_id" class="form-control form-control-sm">
+                            <option value="">All Sources</option>
+                            {% for source in sources %}
+                            <option value="{{ source.id }}" {% if filter_source == source.id|string %}selected{% endif %}>
+                                {{ source.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="row g-2 mt-1 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label fw-bold small">Search Description / Notes</label>
+                        <input type="text" name="search" class="form-control form-control-sm"
+                               placeholder="Type to search..." value="{{ filter_search }}">
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success btn-sm w-100">Apply Filters</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="text-muted">
+            Showing <strong>{{ income_list|length }}</strong> record{{ 's' if income_list|length != 1 else '' }}
+            {% if filters_active %}<span class="badge bg-warning text-dark ms-1">Filtered</span>{% endif %}
+        </span>
+        <span class="fs-5 fw-bold text-success">Total: ${{ "%.2f"|format(total) }}</span>
+    </div>
+
+    {% if income_list %}
+    <div class="table-responsive">
+        <table class="table table-striped table-hover table-sm">
+            <thead class="table-success">
+                <tr>
+                    <th>Date</th>
+                    <th>Source</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Amount</th>
+                    <th>Notes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in income_list %}
+                <tr>
+                    <td>{{ item.date }}</td>
+                    <td>{{ item.source_name or '-' }}</td>
+                    <td>{{ item.description or '-' }}</td>
+                    <td>
+                        {% if item.category_name %}
+                        <span class="badge" style="background-color: {{ item.category_color or '#28a745' }}">
+                            {{ item.category_name }}
+                        </span>
+                        {% else %}-{% endif %}
+                    </td>
+                    <td class="fw-bold text-success">${{ "%.2f"|format(item.amount) }}</td>
+                    <td>{{ item.notes or '-' }}</td>
+                    <td>
+                        <a href="{{ url_for('edit_income', income_id=item.id) }}"
+                           class="btn btn-primary btn-sm">Edit</a>
+                        <form method="POST" action="{{ url_for('delete_income', income_id=item.id) }}"
+                              style="display:inline;"
+                              onsubmit="return confirm('Delete this income record?')">
+                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="alert alert-warning">
+        No income records found{% if filters_active %} matching your filters{% endif %}.
+        {% if filters_active %}
+        <a href="{{ url_for('view_income') }}">Clear filters</a> to see all records.
+        {% else %}
+        <a href="{{ url_for('add_income') }}">Add your first income record</a>.
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -60,6 +60,7 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
+# ============= EXPENSES =============
 @app.route('/add-expense', methods=['GET', 'POST'])
 @login_required
 def add_expense():
@@ -107,7 +108,6 @@ def view_expenses():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Get filter parameters
     filter_date_from = request.args.get('date_from', '')
     filter_date_to = request.args.get('date_to', '')
     filter_category = request.args.get('category_id', '')
@@ -116,7 +116,6 @@ def view_expenses():
     filter_source = request.args.get('source_id', '')
     filter_search = request.args.get('search', '')
 
-    # Build query
     query = """
         SELECT e.*,
                s.name as source_name,
@@ -132,7 +131,6 @@ def view_expenses():
         WHERE e.archived = 0
     """
     params = []
-
     if filter_date_from:
         query += ' AND e.date >= %s'
         params.append(filter_date_from)
@@ -155,16 +153,12 @@ def view_expenses():
         query += ' AND (e.description ILIKE %s OR e.notes ILIKE %s)'
         params.append(f'%{filter_search}%')
         params.append(f'%{filter_search}%')
-
     query += ' ORDER BY e.date DESC, e.created_at DESC'
 
     cursor.execute(query, params)
     expenses = cursor.fetchall()
-
-    # Total for filtered results
     total = sum(float(e['amount']) for e in expenses)
 
-    # Load filter dropdowns
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
     cursor.execute('SELECT * FROM subcategories ORDER BY name')
@@ -173,7 +167,6 @@ def view_expenses():
     vendors = cursor.fetchall()
     cursor.execute('SELECT * FROM sources ORDER BY name')
     sources = cursor.fetchall()
-
     cursor.close()
     conn.close()
 
@@ -181,27 +174,19 @@ def view_expenses():
                           filter_subcategory, filter_vendor, filter_source, filter_search])
 
     return render_template('view_expenses.html',
-                         expenses=expenses,
-                         total=total,
-                         categories=categories,
-                         subcategories=subcategories,
-                         vendors=vendors,
-                         sources=sources,
-                         filter_date_from=filter_date_from,
-                         filter_date_to=filter_date_to,
-                         filter_category=filter_category,
-                         filter_subcategory=filter_subcategory,
-                         filter_vendor=filter_vendor,
-                         filter_source=filter_source,
-                         filter_search=filter_search,
-                         filters_active=filters_active)
+                         expenses=expenses, total=total,
+                         categories=categories, subcategories=subcategories,
+                         vendors=vendors, sources=sources,
+                         filter_date_from=filter_date_from, filter_date_to=filter_date_to,
+                         filter_category=filter_category, filter_subcategory=filter_subcategory,
+                         filter_vendor=filter_vendor, filter_source=filter_source,
+                         filter_search=filter_search, filters_active=filters_active)
 
 @app.route('/expenses/edit/<int:expense_id>', methods=['GET', 'POST'])
 @login_required
 def edit_expense(expense_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-
     if request.method == 'POST':
         date = request.form.get('date')
         amount = float(request.form['amount'])
@@ -229,7 +214,6 @@ def edit_expense(expense_id):
         cursor.close()
         conn.close()
         return "Expense not found", 404
-
     cursor.execute('SELECT * FROM sources ORDER BY name')
     sources = cursor.fetchall()
     cursor.execute('SELECT * FROM categories ORDER BY name')
@@ -240,7 +224,6 @@ def edit_expense(expense_id):
     vendors = cursor.fetchall()
     cursor.close()
     conn.close()
-
     return render_template('edit_expense.html',
                          expense=expense, sources=sources, categories=categories,
                          subcategories=subcategories, vendors=vendors)
@@ -256,6 +239,204 @@ def delete_expense(expense_id):
     conn.close()
     return redirect(url_for('view_expenses'))
 
+# ============= INCOME =============
+@app.route('/add-income', methods=['GET', 'POST'])
+@login_required
+def add_income():
+    if request.method == 'POST':
+        date = request.form.get('date', datetime.now().strftime('%Y-%m-%d'))
+        amount = float(request.form['amount'])
+        source_id = request.form.get('source_id') or None
+        description = request.form.get('description', '')
+        category_id = request.form.get('category_id') or None
+        notes = request.form.get('notes', '')
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO income (date, source_id, description, category_id, amount, notes, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        """, (date, source_id, description, category_id, amount, notes))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for('view_income'))
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM income_categories ORDER BY name')
+    income_categories = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    today = datetime.now().strftime('%Y-%m-%d')
+    return render_template('add_income.html',
+                         sources=sources, income_categories=income_categories, today=today)
+
+@app.route('/view-income')
+@login_required
+def view_income():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    filter_date_from = request.args.get('date_from', '')
+    filter_date_to = request.args.get('date_to', '')
+    filter_category = request.args.get('category_id', '')
+    filter_source = request.args.get('source_id', '')
+    filter_search = request.args.get('search', '')
+
+    query = """
+        SELECT i.*,
+               s.name as source_name,
+               ic.name as category_name,
+               ic.color as category_color
+        FROM income i
+        LEFT JOIN sources s ON i.source_id = s.id
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        WHERE i.archived = 0
+    """
+    params = []
+    if filter_date_from:
+        query += ' AND i.date >= %s'
+        params.append(filter_date_from)
+    if filter_date_to:
+        query += ' AND i.date <= %s'
+        params.append(filter_date_to)
+    if filter_category:
+        query += ' AND i.category_id = %s'
+        params.append(filter_category)
+    if filter_source:
+        query += ' AND i.source_id = %s'
+        params.append(filter_source)
+    if filter_search:
+        query += ' AND (i.description ILIKE %s OR i.notes ILIKE %s)'
+        params.append(f'%{filter_search}%')
+        params.append(f'%{filter_search}%')
+    query += ' ORDER BY i.date DESC, i.created_at DESC'
+
+    cursor.execute(query, params)
+    income_list = cursor.fetchall()
+    total = sum(float(i['amount']) for i in income_list)
+
+    cursor.execute('SELECT * FROM income_categories ORDER BY name')
+    income_categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    filters_active = any([filter_date_from, filter_date_to, filter_category,
+                          filter_source, filter_search])
+
+    return render_template('view_income.html',
+                         income_list=income_list, total=total,
+                         income_categories=income_categories, sources=sources,
+                         filter_date_from=filter_date_from, filter_date_to=filter_date_to,
+                         filter_category=filter_category, filter_source=filter_source,
+                         filter_search=filter_search, filters_active=filters_active)
+
+@app.route('/income/edit/<int:income_id>', methods=['GET', 'POST'])
+@login_required
+def edit_income(income_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if request.method == 'POST':
+        date = request.form.get('date')
+        amount = float(request.form['amount'])
+        source_id = request.form.get('source_id') or None
+        description = request.form.get('description', '')
+        category_id = request.form.get('category_id') or None
+        notes = request.form.get('notes', '')
+        cursor.execute("""
+            UPDATE income
+            SET date = %s, source_id = %s, description = %s,
+                category_id = %s, amount = %s, notes = %s
+            WHERE id = %s
+        """, (date, source_id, description, category_id, amount, notes, income_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for('view_income'))
+
+    cursor.execute('SELECT * FROM income WHERE id = %s', (income_id,))
+    income = cursor.fetchone()
+    if not income:
+        cursor.close()
+        conn.close()
+        return "Income not found", 404
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM income_categories ORDER BY name')
+    income_categories = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('edit_income.html',
+                         income=income, sources=sources, income_categories=income_categories)
+
+@app.route('/income/delete/<int:income_id>', methods=['POST'])
+@login_required
+def delete_income(income_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM income WHERE id = %s', (income_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('view_income'))
+
+# ---- Income Categories ----
+@app.route('/manage/income-categories')
+@login_required
+def manage_income_categories():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM income_categories ORDER BY name')
+    income_categories = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_income_categories.html', income_categories=income_categories)
+
+@app.route('/manage/income-categories/add', methods=['POST'])
+@login_required
+def add_income_category():
+    name = request.form['name']
+    color = request.form.get('color', '#28a745')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO income_categories (name, color) VALUES (%s, %s)', (name, color))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('manage_income_categories'))
+
+@app.route('/manage/income-categories/delete/<int:category_id>', methods=['POST'])
+@login_required
+def delete_income_category(category_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM income_categories WHERE id = %s', (category_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('manage_income_categories'))
+
+# Quick add income category
+@app.route('/quick-add/income-category', methods=['POST'])
+@login_required
+def quick_add_income_category():
+    name = request.form.get('name', '').strip()
+    if name:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('INSERT INTO income_categories (name, color) VALUES (%s, %s) RETURNING id',
+                      (name, '#28a745'))
+        new_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'id': new_id, 'name': name})
+    return jsonify({'success': False})
+
 # ============= MANAGE =============
 @app.route('/manage')
 @login_required
@@ -270,10 +451,20 @@ def manage():
     vendors_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM expenses')
     expenses_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM income')
+    income_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM income_categories')
+    income_categories_count = cursor.fetchone()['count']
     cursor.close()
     conn.close()
-    stats = {'sources': sources_count, 'categories': categories_count,
-             'vendors': vendors_count, 'expenses': expenses_count}
+    stats = {
+        'sources': sources_count,
+        'categories': categories_count,
+        'vendors': vendors_count,
+        'expenses': expenses_count,
+        'income': income_count,
+        'income_categories': income_categories_count
+    }
     return render_template('manage.html', stats=stats)
 
 # ---- Sources ----

@@ -46,10 +46,15 @@
         </div>
     </div>
 
+    <!-- Print tip -->
+    <div class="alert alert-info py-2 small mb-3 d-print-none">
+        💡 <strong>Tip:</strong> Click a category to expand/collapse subcategories. Click a subcategory to see individual transactions. Use <strong>Ctrl+P</strong> to print — subcategories only print if expanded.
+    </div>
+
     <!-- P&L Table -->
     <div class="card">
         <div class="card-body p-0">
-            <table class="table table-hover mb-0">
+            <table class="table table-hover mb-0" id="plTable">
                 <thead class="table-dark">
                     <tr>
                         <th style="width:32%">Category</th>
@@ -71,11 +76,11 @@
                     {% set budget_var = row.actual - row.budget if row.budget > 0 else 0 %}
                     {% set yoy = row.actual - row.ly_amount %}
                     {% set yoy_pct = (yoy / row.ly_amount * 100) if row.ly_amount > 0 else 0 %}
-                    <tr class="clickable-row"
+                    <tr class="category-row"
                         onclick="showDetail('{{ row.category_id }}', null, '{{ row.category_name }}', 'income')"
                         style="cursor:pointer;"
                         title="Click to see transactions">
-                        <td class="ps-4">
+                        <td class="ps-4 fw-bold">
                             <span class="badge me-1" style="background-color: {{ row.color or '#28a745' }}">{{ row.category_name }}</span>
                             <small class="text-muted">▶</small>
                         </td>
@@ -111,7 +116,7 @@
                         </td>
                     </tr>
 
-                    <tr><td colspan="6" style="padding:4px;"></td></tr>
+                    <tr class="spacer-row"><td colspan="6" style="padding:4px; background:#f8f9fa;"></td></tr>
 
                     <!-- ===== EXPENSES ===== -->
                     <tr class="table-danger">
@@ -122,14 +127,17 @@
                     {% set budget_var = row.budget - row.actual if row.budget > 0 else 0 %}
                     {% set yoy = row.actual - row.ly_amount %}
                     {% set yoy_pct = (yoy / row.ly_amount * 100) if row.ly_amount > 0 else 0 %}
-                    <!-- Category Row - clickable -->
-                    <tr class="clickable-row"
-                        onclick="showDetail('{{ row.category_id }}', null, '{{ row.category_name }}', 'expense')"
+                    {% set cat_slug = row.category_name | replace(' ', '_') | replace('/', '_') %}
+
+                    <!-- Category Row — click to expand/collapse subcategories -->
+                    <tr class="category-row"
+                        onclick="toggleSubcategories('subs_{{ cat_slug }}')"
                         style="cursor:pointer;"
-                        title="Click to see all transactions">
+                        title="Click to expand/collapse subcategories">
                         <td class="ps-4 fw-bold">
+                            <span class="expand-icon me-1" id="icon_{{ cat_slug }}">▶</span>
                             <span class="badge me-1" style="background-color: {{ row.color or '#6c757d' }}">{{ row.category_name }}</span>
-                            <small class="text-muted">▶</small>
+                            {% if row.subcategories %}<small class="text-muted">({{ row.subcategories|length }})</small>{% endif %}
                         </td>
                         <td class="text-end text-muted">{% if row.budget > 0 %}${{ "%.2f"|format(row.budget) }}{% else %}—{% endif %}</td>
                         <td class="text-end fw-bold text-danger">${{ "%.2f"|format(row.actual) }}</td>
@@ -141,25 +149,29 @@
                             {% if row.ly_amount > 0 %}{% if yoy >= 0 %}+{% endif %}${{ "%.2f"|format(yoy) }} ({{ "%.0f"|format(yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
-                    <!-- Subcategory Rows - each also clickable -->
+
+                    <!-- Subcategory Rows — hidden by default, click triggers transaction popup -->
+                    {% if row.subcategories %}
                     {% for sub in row.subcategories %}
                     {% set sub_var = sub.budget - sub.actual if sub.budget > 0 else 0 %}
-                    <tr class="clickable-row"
+                    <tr class="subcat-row d-none" data-group="subs_{{ cat_slug }}"
                         onclick="showDetail('{{ row.category_id }}', '{{ sub.subcategory_id }}', '{{ row.category_name }} → {{ sub.name }}', 'expense')"
-                        style="cursor:pointer; background-color: #fafafa;"
-                        title="Click to see subcategory transactions">
-                        <td class="ps-5 text-muted small">
-                            ↳ {{ sub.name }} <small>▶</small>
+                        style="cursor:pointer; background-color:#fafafa;"
+                        title="Click to see transactions for {{ sub.name }}">
+                        <td class="ps-5 text-muted">
+                            ↳ {{ sub.name }} <small class="text-primary">▶ view</small>
                         </td>
                         <td class="text-end text-muted small">{% if sub.budget > 0 %}${{ "%.2f"|format(sub.budget) }}{% else %}—{% endif %}</td>
-                        <td class="text-end small">${{ "%.2f"|format(sub.actual) }}</td>
+                        <td class="text-end small fw-bold">${{ "%.2f"|format(sub.actual) }}</td>
                         <td class="text-end small {% if sub_var >= 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if sub.budget > 0 %}{% if sub_var >= 0 %}+{% endif %}${{ "%.2f"|format(sub_var) }}{% else %}—{% endif %}
                         </td>
                         <td class="text-end text-muted small">—</td>
-                        <td class="text-end small text-muted">—</td>
+                        <td class="text-end text-muted small">—</td>
                     </tr>
                     {% endfor %}
+                    {% endif %}
+
                     {% endfor %}
                     {% if not expenses_by_category %}
                     <tr><td colspan="6" class="text-muted text-center ps-4 py-2">No expenses recorded for this period</td></tr>
@@ -182,7 +194,7 @@
                         </td>
                     </tr>
 
-                    <tr><td colspan="6" style="padding:4px;"></td></tr>
+                    <tr class="spacer-row"><td colspan="6" style="padding:4px; background:#f8f9fa;"></td></tr>
 
                     <!-- ===== NET ROW ===== -->
                     {% set net_budget = total_income_budget - total_expenses_budget %}
@@ -195,11 +207,13 @@
                         <td class="text-end">
                             {% if total_income_budget > 0 or total_expenses_budget > 0 %}${{ "%.2f"|format(net_budget) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end {% if net >= 0 %}text-success{% else %}text-danger{% endif %} fs-5">${{ "%.2f"|format(net) }}</td>
+                        <td class="text-end {% if net >= 0 %}text-success{% else %}text-danger{% endif %} fs-5">
+                            {% if net < 0 %}-{% endif %}${{ "%.2f"|format(net|abs) }}
+                        </td>
                         <td class="text-end {% if net_budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if total_income_budget > 0 or total_expenses_budget > 0 %}{% if net_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(net_budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end">{% if ly_net != 0 %}${{ "%.2f"|format(ly_net) }}{% else %}—{% endif %}</td>
+                        <td class="text-end">{% if ly_net != 0 %}{% if ly_net < 0 %}-{% endif %}${{ "%.2f"|format(ly_net|abs) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if net_yoy >= 0 %}text-success{% else %}text-danger{% endif %}">
                             {% if ly_net != 0 %}{% if net_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(net_yoy) }} ({{ "%.0f"|format(net_yoy_pct) }}%){% else %}—{% endif %}
                         </td>
@@ -253,8 +267,18 @@
     </div>
 </div>
 
+<style>
+@media print {
+    .d-print-none { display: none !important; }
+    .subcat-row { display: table-row !important; }
+    .navbar { display: none !important; }
+    .modal { display: none !important; }
+}
+.category-row:hover { background-color: #f0f4ff !important; }
+.subcat-row:hover { background-color: #e8f0fe !important; }
+</style>
+
 <script>
-// Store date range for API calls
 const PNL_START = '{{ start_date }}';
 const PNL_END = '{{ end_date }}';
 
@@ -265,15 +289,28 @@ function toggleInputs(viewType) {
     document.getElementById('input_to').style.display = viewType === 'range' ? '' : 'none';
 }
 
+function toggleSubcategories(groupId) {
+    const rows = document.querySelectorAll(`[data-group="${groupId}"]`);
+    const icon = document.getElementById('icon_' + groupId.replace('subs_', ''));
+    let anyVisible = false;
+    rows.forEach(r => { if (!r.classList.contains('d-none')) anyVisible = true; });
+    rows.forEach(r => {
+        if (anyVisible) {
+            r.classList.add('d-none');
+        } else {
+            r.classList.remove('d-none');
+        }
+    });
+    if (icon) icon.textContent = anyVisible ? '▶' : '▼';
+}
+
 function showDetail(categoryId, subcategoryId, label, type) {
-    // Show modal
     const modal = new bootstrap.Modal(document.getElementById('detailModal'));
     document.getElementById('modalTitle').textContent = label + ' — Transactions';
     document.getElementById('modalLoading').style.display = 'block';
     document.getElementById('modalContent').style.display = 'none';
     modal.show();
 
-    // Build URL
     let url = `/pnl/detail?category_id=${categoryId}&start_date=${PNL_START}&end_date=${PNL_END}&type=${type}`;
     if (subcategoryId) url += `&subcategory_id=${subcategoryId}`;
 
@@ -282,7 +319,6 @@ function showDetail(categoryId, subcategoryId, label, type) {
         .then(data => {
             const tbody = document.getElementById('modalTableBody');
             tbody.innerHTML = '';
-
             if (data.transactions.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No transactions found</td></tr>';
             } else {
@@ -299,7 +335,6 @@ function showDetail(categoryId, subcategoryId, label, type) {
                         </tr>`;
                 });
             }
-
             const totalClass = type === 'income' ? 'text-success' : 'text-danger';
             document.getElementById('modalTotal').innerHTML = `<span class="${totalClass}">$${data.total.toFixed(2)}</span>`;
             document.getElementById('modalLoading').style.display = 'none';
@@ -312,11 +347,5 @@ function showDetail(categoryId, subcategoryId, label, type) {
             document.getElementById('modalContent').style.display = 'block';
         });
 }
-
-// Highlight rows on hover
-document.querySelectorAll('.clickable-row').forEach(row => {
-    row.addEventListener('mouseenter', () => row.style.backgroundColor = '#f0f4ff');
-    row.addEventListener('mouseleave', () => row.style.backgroundColor = '');
-});
 </script>
 {% endblock %}

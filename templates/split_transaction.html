@@ -50,12 +50,12 @@
                 <thead class="table-dark">
                     <tr>
                         <th>#</th>
-                        <th>Amount</th>
-                        <th>Category</th>
-                        <th>Subcategory</th>
-                        <th>Vendor</th>
-                        <th>Description</th>
-                        <th>Notes</th>
+                        <th style="min-width:120px;">Amount</th>
+                        <th style="min-width:180px;">Category</th>
+                        <th style="min-width:180px;">Subcategory</th>
+                        <th style="min-width:180px;">Vendor</th>
+                        <th style="min-width:150px;">Description</th>
+                        <th style="min-width:130px;">Notes</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -67,7 +67,7 @@
     </div>
 
     <!-- Action Buttons -->
-    <div class="d-flex gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <button type="button" class="btn btn-primary btn-lg" id="saveBtn" onclick="saveSplit()" disabled>
             💾 Save Split Transaction
         </button>
@@ -83,10 +83,8 @@
      data-expense-id="{{ expense.id }}"
      data-original-amount="{{ expense.amount }}"
      data-existing-splits="{{ splits_json }}"
-     style="display:none;">
-</div>
+     style="display:none;"></div>
 
-<!-- Category/subcategory data for dropdowns -->
 <div id="categoriesData" style="display:none;">{{ categories_json }}</div>
 <div id="subcategoriesData" style="display:none;">{{ subcategories_json }}</div>
 <div id="vendorsData" style="display:none;">{{ vendors_json }}</div>
@@ -97,12 +95,13 @@ const EXPENSE_ID = pageData.dataset.expenseId;
 const ORIGINAL_AMOUNT = parseFloat(pageData.dataset.originalAmount);
 const EXISTING_SPLITS = JSON.parse(pageData.dataset.existingSplits);
 
-const categories = JSON.parse(document.getElementById('categoriesData').textContent);
-const subcategories = JSON.parse(document.getElementById('subcategoriesData').textContent);
-const vendors = JSON.parse(document.getElementById('vendorsData').textContent);
+let categories = JSON.parse(document.getElementById('categoriesData').textContent);
+let subcategories = JSON.parse(document.getElementById('subcategoriesData').textContent);
+let vendors = JSON.parse(document.getElementById('vendorsData').textContent);
 
 let rowCount = 0;
 
+// ---- Dropdown builders ----
 function buildCategoryOptions(selectedId) {
     let html = '<option value="">Select Category...</option>';
     categories.forEach(c => {
@@ -111,9 +110,9 @@ function buildCategoryOptions(selectedId) {
     return html;
 }
 
-function buildSubcategoryOptions(selectedCatId, selectedSubId) {
+function buildSubcategoryOptions(catId, selectedSubId) {
     let html = '<option value="">None</option>';
-    subcategories.filter(s => s.category_id == selectedCatId).forEach(s => {
+    subcategories.filter(s => s.category_id == catId).forEach(s => {
         html += `<option value="${s.id}" ${s.id == selectedSubId ? 'selected' : ''}>${s.name}</option>`;
     });
     return html;
@@ -127,78 +126,101 @@ function buildVendorOptions(selectedId) {
     return html;
 }
 
+// ---- Add Row ----
 function addRow(data) {
     rowCount++;
     const d = data || {};
     const tbody = document.getElementById('splitBody');
     const tr = document.createElement('tr');
     tr.id = `row_${rowCount}`;
+    const rc = rowCount; // capture for closures
+
     tr.innerHTML = `
-        <td class="fw-bold text-muted">${rowCount}</td>
+        <td class="fw-bold text-muted align-middle">${rc}</td>
+
+        <!-- Amount -->
         <td>
-            <input type="number" step="0.01" min="0.01" class="form-control form-control-sm split-amount"
-                   style="width:110px;" value="${d.amount || ''}" placeholder="0.00"
+            <input type="number" step="0.01" min="0.01"
+                   class="form-control form-control-sm split-amount"
+                   value="${d.amount || ''}" placeholder="0.00"
                    oninput="updateTotal()">
         </td>
+
+        <!-- Category + quick add -->
         <td>
-            <select class="form-control form-control-sm split-category" style="min-width:140px;"
-                    onchange="updateSubcategories(this, ${rowCount})">
-                ${buildCategoryOptions(d.category_id)}
-            </select>
+            <div class="input-group input-group-sm">
+                <select class="form-control form-control-sm split-category" id="cat_${rc}"
+                        onchange="onCategoryChange(${rc})">
+                    ${buildCategoryOptions(d.category_id)}
+                </select>
+                <button type="button" class="btn btn-success btn-sm" onclick="quickAddCategory(${rc})" title="Add new category">+</button>
+            </div>
         </td>
+
+        <!-- Subcategory + quick add -->
         <td>
-            <select class="form-control form-control-sm split-subcategory" id="sub_${rowCount}" style="min-width:130px;">
-                ${buildSubcategoryOptions(d.category_id, d.subcategory_id)}
-            </select>
+            <div class="input-group input-group-sm">
+                <select class="form-control form-control-sm split-subcategory" id="sub_${rc}">
+                    ${buildSubcategoryOptions(d.category_id, d.subcategory_id)}
+                </select>
+                <button type="button" class="btn btn-success btn-sm" onclick="quickAddSubcategory(${rc})" title="Add new subcategory">+</button>
+            </div>
         </td>
+
+        <!-- Vendor + quick add -->
         <td>
-            <select class="form-control form-control-sm split-vendor" style="min-width:130px;">
-                ${buildVendorOptions(d.vendor_id)}
-            </select>
+            <div class="input-group input-group-sm">
+                <select class="form-control form-control-sm split-vendor" id="ven_${rc}">
+                    ${buildVendorOptions(d.vendor_id)}
+                </select>
+                <button type="button" class="btn btn-success btn-sm" onclick="quickAddVendor(${rc})" title="Add new vendor">+</button>
+            </div>
         </td>
+
+        <!-- Description -->
         <td>
             <input type="text" class="form-control form-control-sm split-description"
-                   style="min-width:130px;" value="${d.description || ''}" placeholder="Optional">
+                   value="${d.description || ''}" placeholder="Optional">
         </td>
+
+        <!-- Notes -->
         <td>
             <input type="text" class="form-control form-control-sm split-notes"
-                   style="min-width:110px;" value="${d.notes || ''}" placeholder="Optional">
+                   value="${d.notes || ''}" placeholder="Optional">
         </td>
+
+        <!-- Remove -->
         <td>
-            <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(${rowCount})">✕</button>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(${rc})">✕</button>
         </td>
     `;
     tbody.appendChild(tr);
     updateTotal();
 }
 
-function updateSubcategories(catSelect, rowId) {
-    const catId = catSelect.value;
-    const subSelect = document.getElementById(`sub_${rowId}`);
-    subSelect.innerHTML = '<option value="">None</option>';
-    subcategories.filter(s => s.category_id == catId).forEach(s => {
-        subSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
-    });
+// ---- Category change → refresh subcategories ----
+function onCategoryChange(rc) {
+    const catId = document.getElementById(`cat_${rc}`).value;
+    const subSelect = document.getElementById(`sub_${rc}`);
+    subSelect.innerHTML = buildSubcategoryOptions(catId, null);
 }
 
-function removeRow(rowId) {
-    const tbody = document.getElementById('splitBody');
-    if (tbody.children.length <= 1) {
+// ---- Remove row ----
+function removeRow(rc) {
+    if (document.getElementById('splitBody').children.length <= 1) {
         alert('You need at least one split row.');
         return;
     }
-    document.getElementById(`row_${rowId}`).remove();
+    document.getElementById(`row_${rc}`).remove();
     updateTotal();
 }
 
+// ---- Running total ----
 function updateTotal() {
-    const amounts = document.querySelectorAll('.split-amount');
     let total = 0;
-    amounts.forEach(a => { total += parseFloat(a.value) || 0; });
-
+    document.querySelectorAll('.split-amount').forEach(a => { total += parseFloat(a.value) || 0; });
     const diff = Math.abs(total - ORIGINAL_AMOUNT);
     const matched = diff < 0.01;
-
     document.getElementById('runningTotal').childNodes[0].textContent = `$${total.toFixed(2)} `;
     const status = document.getElementById('totalStatus');
     if (matched) {
@@ -207,45 +229,109 @@ function updateTotal() {
     } else {
         const remaining = ORIGINAL_AMOUNT - total;
         status.className = 'ms-2 text-danger fw-bold';
-        status.textContent = remaining > 0 ? `$${remaining.toFixed(2)} remaining` : `$${Math.abs(remaining).toFixed(2)} over`;
+        status.textContent = remaining > 0
+            ? `$${remaining.toFixed(2)} remaining`
+            : `$${Math.abs(remaining).toFixed(2)} over`;
     }
-
-    document.getElementById('saveBtn').disabled = !matched || amounts.length === 0;
+    document.getElementById('saveBtn').disabled = !matched;
 }
 
+// ---- Quick Add helpers ----
+function quickAddCategory(rc) {
+    const name = prompt('New category name:');
+    if (!name || !name.trim()) return;
+    fetch('/quick-add/category', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'name=' + encodeURIComponent(name.trim())
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            categories.push({id: data.id, name: data.name});
+            const sel = document.getElementById(`cat_${rc}`);
+            const opt = document.createElement('option');
+            opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+            sel.appendChild(opt);
+            onCategoryChange(rc);
+        }
+    });
+}
+
+function quickAddSubcategory(rc) {
+    const catId = document.getElementById(`cat_${rc}`).value;
+    if (!catId) { alert('Please select a category first.'); return; }
+    const name = prompt('New subcategory name:');
+    if (!name || !name.trim()) return;
+    fetch('/quick-add/subcategory', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'name=' + encodeURIComponent(name.trim()) + '&category_id=' + catId
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            subcategories.push({id: data.id, name: data.name, category_id: parseInt(catId)});
+            const sel = document.getElementById(`sub_${rc}`);
+            const opt = document.createElement('option');
+            opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+            sel.appendChild(opt);
+        }
+    });
+}
+
+function quickAddVendor(rc) {
+    const name = prompt('New vendor name:');
+    if (!name || !name.trim()) return;
+    fetch('/quick-add/vendor', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'name=' + encodeURIComponent(name.trim())
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            vendors.push({id: data.id, name: data.name});
+            const sel = document.getElementById(`ven_${rc}`);
+            const opt = document.createElement('option');
+            opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+            sel.appendChild(opt);
+        }
+    });
+}
+
+// ---- Save ----
 function saveSplit() {
     const rows = document.querySelectorAll('#splitBody tr');
     const splits = [];
     rows.forEach(row => {
         splits.push({
-            amount: parseFloat(row.querySelector('.split-amount').value) || 0,
-            category_id: row.querySelector('.split-category').value || null,
-            subcategory_id: row.querySelector('.split-subcategory').value || null,
-            vendor_id: row.querySelector('.split-vendor').value || null,
-            description: row.querySelector('.split-description').value,
-            notes: row.querySelector('.split-notes').value
+            amount:        parseFloat(row.querySelector('.split-amount').value) || 0,
+            category_id:   row.querySelector('.split-category').value || null,
+            subcategory_id:row.querySelector('.split-subcategory').value || null,
+            vendor_id:     row.querySelector('.split-vendor').value || null,
+            description:   row.querySelector('.split-description').value,
+            notes:         row.querySelector('.split-notes').value
         });
     });
 
     fetch(`/expenses/split/${EXPENSE_ID}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({splits: splits})
+        body: JSON.stringify({splits})
     })
     .then(r => r.json())
     .then(data => {
-        if (data.success) {
-            window.location.href = '/view-expenses';
-        } else {
-            alert('Error: ' + (data.error || 'Unknown error'));
-        }
+        if (data.success) window.location.href = '/view-expenses';
+        else alert('Error: ' + (data.error || 'Unknown error'));
     })
     .catch(() => alert('Error saving split transaction.'));
 }
 
+// ---- Reset ----
 function resetTransaction() {
     if (!confirm('Reset this back to a single transaction? All splits will be deleted.')) return;
-    fetch(`/expenses/split/reset/${EXPENSE_ID}`, { method: 'POST' })
+    fetch(`/expenses/split/reset/${EXPENSE_ID}`, {method: 'POST'})
     .then(r => r.json())
     .then(data => {
         if (data.success) window.location.href = '/view-expenses';
@@ -253,13 +339,12 @@ function resetTransaction() {
     });
 }
 
-// Load existing splits or add 2 empty rows to start
+// ---- Init ----
 window.onload = function() {
     if (EXISTING_SPLITS.length > 0) {
         EXISTING_SPLITS.forEach(s => addRow(s));
     } else {
-        addRow();
-        addRow();
+        addRow(); addRow();
     }
 };
 </script>

@@ -6,6 +6,7 @@ import bcrypt
 from datetime import datetime
 from functools import wraps
 import os
+import json
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
@@ -1009,7 +1010,6 @@ def split_transaction(expense_id):
 @app.route('/expenses/split/<int:expense_id>', methods=['POST'])
 @login_required
 def save_split_transaction(expense_id):
-    import json as json_lib
     data = request.get_json()
     splits = data.get('splits', [])
 

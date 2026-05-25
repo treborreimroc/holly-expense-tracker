@@ -786,6 +786,7 @@ def pnl():
         if cat_id not in sub_lookup:
             sub_lookup[cat_id] = []
         sub_lookup[cat_id].append({
+            'subcategory_id': sub['sub_id'],
             'name': sub['name'],
             'actual': float(sub['actual']),
             'budget': sub_budget_dict.get(sub['sub_id'], 0)
@@ -843,6 +844,8 @@ def pnl():
                          date_from=date_from,
                          date_to=date_to,
                          period_label=period_label,
+                         start_date=start_date,
+                         end_date=end_date,
                          income_by_category=income_by_category,
                          expenses_by_category=expenses_by_category,
                          total_income=total_income,
@@ -853,6 +856,82 @@ def pnl():
                          ly_total_income=ly_total_income,
                          ly_total_expenses=ly_total_expenses,
                          years=years)
+
+
+# ============= P&L DETAIL POPUP =============
+@app.route('/pnl/detail')
+@login_required
+def pnl_detail():
+    """Returns JSON list of transactions for a category/subcategory in a date range."""
+    category_id = request.args.get('category_id')
+    subcategory_id = request.args.get('subcategory_id')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    record_type = request.args.get('type', 'expense')  # 'expense' or 'income'
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    if record_type == 'income':
+        cursor.execute("""
+            SELECT i.date, i.description, i.amount, i.notes,
+                   s.name as source_name, ic.name as category_name
+            FROM income i
+            LEFT JOIN sources s ON i.source_id = s.id
+            LEFT JOIN income_categories ic ON i.category_id = ic.id
+            WHERE i.archived = 0 AND i.date >= %s AND i.date < %s
+            AND ic.id = %s
+            ORDER BY i.date DESC
+        """, (start_date, end_date, category_id))
+    else:
+        if subcategory_id:
+            cursor.execute("""
+                SELECT e.date, e.description, e.amount, e.notes,
+                       s.name as source_name, c.name as category_name,
+                       sc.name as subcategory_name, v.name as vendor_name
+                FROM expenses e
+                LEFT JOIN sources s ON e.source_id = s.id
+                LEFT JOIN categories c ON e.category_id = c.id
+                LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+                LEFT JOIN vendors v ON e.vendor_id = v.id
+                WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
+                AND e.subcategory_id = %s
+                ORDER BY e.date DESC
+            """, (start_date, end_date, subcategory_id))
+        else:
+            cursor.execute("""
+                SELECT e.date, e.description, e.amount, e.notes,
+                       s.name as source_name, c.name as category_name,
+                       sc.name as subcategory_name, v.name as vendor_name
+                FROM expenses e
+                LEFT JOIN sources s ON e.source_id = s.id
+                LEFT JOIN categories c ON e.category_id = c.id
+                LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+                LEFT JOIN vendors v ON e.vendor_id = v.id
+                WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
+                AND e.category_id = %s
+                ORDER BY e.date DESC
+            """, (start_date, end_date, category_id))
+
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    transactions = []
+    for r in rows:
+        transactions.append({
+            'date': str(r['date']),
+            'description': r.get('description') or '—',
+            'category_name': r.get('category_name') or '—',
+            'subcategory_name': r.get('subcategory_name') or '',
+            'vendor_name': r.get('vendor_name') or '',
+            'source_name': r.get('source_name') or '—',
+            'notes': r.get('notes') or '',
+            'amount': float(r['amount'])
+        })
+
+    total = sum(t['amount'] for t in transactions)
+    return jsonify({'transactions': transactions, 'total': total})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

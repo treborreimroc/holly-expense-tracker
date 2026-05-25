@@ -1520,30 +1520,40 @@ def pnl_report_pdf():
         start_date = f'{y}-{m:02d}-01'
         end_date   = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
         period     = selected_month
+        use_lt     = True   # use < for month/year (end_date is first day of NEXT period)
     elif view_type == 'year':
         start_date = f'{selected_year}-01-01'
         end_date   = f'{selected_year+1}-01-01'
         period     = str(selected_year)
+        use_lt     = True
     else:
-        start_date = date_from; end_date = date_to
+        # Custom range — validate dates
+        if not date_from or not date_to:
+            return "Please provide both a start and end date.", 400
+        start_date = date_from
+        end_date   = date_to
         period     = f"{date_from} to {date_to}"
+        use_lt     = False  # use <= for custom range (end_date is inclusive)
+
+    # Build date comparison operator
+    date_op = '<' if use_lt else '<='
 
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT ic.name as category_name, SUM(i.amount) as total
         FROM income i LEFT JOIN income_categories ic ON i.category_id = ic.id
-        WHERE i.archived=0 AND i.date>=%s AND i.date<%s
+        WHERE i.archived=0 AND i.date>=%s AND i.date{date_op}%s
         GROUP BY ic.name ORDER BY total DESC
     """, (start_date, end_date))
     income_rows = cursor.fetchall()
     total_income = sum(float(r['total']) for r in income_rows)
 
-    cursor.execute("""
+    cursor.execute(f"""
         SELECT c.name as category_name, SUM(e.amount) as total
         FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
-        WHERE e.archived=0 AND e.date>=%s AND e.date<%s
+        WHERE e.archived=0 AND e.date>=%s AND e.date{date_op}%s
         GROUP BY c.name ORDER BY total DESC
     """, (start_date, end_date))
     expense_rows = cursor.fetchall()

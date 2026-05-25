@@ -109,7 +109,8 @@ def view_expenses():
     filter_search = request.args.get('search', '')
     query = """
         SELECT e.*, s.name as source_name, c.name as category_name,
-               c.color as category_color, sc.name as subcategory_name, v.name as vendor_name
+               c.color as category_color, sc.name as subcategory_name, v.name as vendor_name,
+               (e.receipt_data IS NOT NULL) as has_receipt
         FROM expenses e
         LEFT JOIN sources s ON e.source_id = s.id
         LEFT JOIN categories c ON e.category_id = c.id
@@ -1070,6 +1071,73 @@ def reset_split_transaction(expense_id):
     cursor.execute('UPDATE expenses SET is_split = 0 WHERE id = %s', (expense_id,))
     conn.commit()
     cursor.close(); conn.close()
+    return jsonify({'success': True})
+
+
+# ============= RECEIPTS =============
+@app.route('/expenses/<int:expense_id>/receipt', methods=['POST'])
+@login_required
+def upload_receipt(expense_id):
+    if 'receipt' not in request.files:
+        return jsonify({'success': False, 'error': 'No file provided'})
+    
+    file = request.files['receipt']
+    if file.filename == '':
+        return jsonify({'success': False, 'error': 'No file selected'})
+    
+    allowed = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'}
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+    if ext not in allowed:
+        return jsonify({'success': False, 'error': 'File type not allowed'})
+    
+    # Read file data
+    file_data = file.read()
+    
+    # Limit to 10MB
+    if len(file_data) > 10 * 1024 * 1024:
+        return jsonify({'success': False, 'error': 'File too large (max 10MB)'})
+    
+    mime_type = file.content_type or f'image/{ext}'
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE expenses SET receipt_data = %s, receipt_mime_type = %s WHERE id = %s
+    """, (psycopg2.Binary(file_data), mime_type, expense_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    
+    return jsonify({'success': True})
+
+@app.route('/expenses/<int:expense_id>/receipt', methods=['GET'])
+@login_required
+def view_receipt(expense_id):
+    from flask import Response
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT receipt_data, receipt_mime_type FROM expenses WHERE id = %s', (expense_id,))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    
+    if not row or not row['receipt_data']:
+        return "No receipt found", 404
+    
+    return Response(
+        bytes(row['receipt_data']),
+        mimetype=row['receipt_mime_type'] or 'image/jpeg'
+    )
+
+@app.route('/expenses/<int:expense_id>/receipt/delete', methods=['POST'])
+@login_required
+def delete_receipt(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE expenses SET receipt_data = NULL, receipt_mime_type = NULL WHERE id = %s", (expense_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
     return jsonify({'success': True})
 
 if __name__ == '__main__':

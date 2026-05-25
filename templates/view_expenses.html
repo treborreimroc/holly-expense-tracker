@@ -86,7 +86,6 @@
         <span class="fs-5 fw-bold text-danger">Total: ${{ "%.2f"|format(total) }}</span>
     </div>
 
-    <!-- Expenses Table -->
     {% if expenses %}
     <div class="table-responsive">
         <table class="table table-striped table-hover table-sm">
@@ -110,7 +109,7 @@
                     <td>
                         {{ expense.description or '-' }}
                         {% if expense.is_split == 2 %}
-                            <span class="badge bg-info text-dark ms-1" title="Split transaction">🔀 split</span>
+                            <span class="badge bg-info text-dark ms-1">🔀 split</span>
                         {% endif %}
                     </td>
                     <td>
@@ -124,15 +123,33 @@
                     <td>{{ expense.vendor_name or '-' }}</td>
                     <td class="fw-bold">${{ "%.2f"|format(expense.amount) }}</td>
                     <td>
-                        <a href="{{ url_for('edit_expense', expense_id=expense.id) }}"
-                           class="btn btn-primary btn-sm">Edit</a>
-                        <a href="{{ url_for('split_transaction', expense_id=expense.id) }}"
-                           class="btn btn-info btn-sm text-white">🔀 Split</a>
-                        <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}"
-                              style="display:inline;"
-                              onsubmit="return confirm('Delete this expense?')">
-                            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
-                        </form>
+                        <div class="d-flex gap-1 flex-wrap">
+                            <!-- Edit -->
+                            <a href="{{ url_for('edit_expense', expense_id=expense.id) }}"
+                               class="btn btn-primary btn-sm">Edit</a>
+
+                            <!-- Split -->
+                            <a href="{{ url_for('split_transaction', expense_id=expense.id) }}"
+                               class="btn btn-info btn-sm text-white">🔀</a>
+
+                            <!-- Receipt: show view button if exists, upload if not -->
+                            {% if expense.has_receipt %}
+                                <button type="button" class="btn btn-success btn-sm"
+                                        onclick="viewReceipt({{ expense.id }})"
+                                        title="View receipt">📷</button>
+                            {% else %}
+                                <button type="button" class="btn btn-outline-secondary btn-sm"
+                                        onclick="triggerUpload({{ expense.id }})"
+                                        title="Upload receipt">📷+</button>
+                            {% endif %}
+
+                            <!-- Delete -->
+                            <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Delete this expense?')">
+                                <button type="submit" class="btn btn-danger btn-sm">✕</button>
+                            </form>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -142,37 +159,125 @@
     {% else %}
     <div class="alert alert-warning">
         No expenses found{% if filters_active %} matching your filters{% endif %}.
-        {% if filters_active %}
-        <a href="{{ url_for('view_expenses') }}">Clear filters</a> to see all expenses.
-        {% endif %}
+        {% if filters_active %}<a href="{{ url_for('view_expenses') }}">Clear filters</a> to see all.{% endif %}
     </div>
     {% endif %}
 </div>
 
+<!-- Hidden file input for receipt upload -->
+<input type="file" id="receiptFileInput" accept="image/*" capture="environment" style="display:none;">
+
+<!-- Receipt View Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center p-2">
+                <img id="receiptImage" src="" class="img-fluid rounded" alt="Receipt">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger btn-sm" id="deleteReceiptBtn">🗑 Delete Receipt</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upload progress toast -->
+<div class="position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="uploadToast" class="toast" role="alert">
+        <div class="toast-header">
+            <strong class="me-auto">Receipt Upload</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="uploadToastMsg">Uploading...</div>
+    </div>
+</div>
+
 <script>
+let currentExpenseId = null;
+
+// ---- Filter subcategories ----
 document.getElementById('filter_category').addEventListener('change', function() {
     const categoryId = this.value;
     const subSelect = document.getElementById('filter_subcategory');
-    const options = subSelect.querySelectorAll('option[data-category]');
-    options.forEach(opt => {
-        if (!categoryId || opt.getAttribute('data-category') === categoryId) {
-            opt.style.display = 'block';
-        } else {
-            opt.style.display = 'none';
-            if (opt.selected) subSelect.value = '';
-        }
+    subSelect.querySelectorAll('option[data-category]').forEach(opt => {
+        opt.style.display = (!categoryId || opt.getAttribute('data-category') === categoryId) ? 'block' : 'none';
+        if (opt.selected && opt.style.display === 'none') subSelect.value = '';
     });
 });
-
 (function() {
     const categoryId = document.getElementById('filter_category').value;
     if (categoryId) {
         document.getElementById('filter_subcategory')
             .querySelectorAll('option[data-category]')
-            .forEach(opt => {
-                if (opt.getAttribute('data-category') !== categoryId) opt.style.display = 'none';
-            });
+            .forEach(opt => { if (opt.getAttribute('data-category') !== categoryId) opt.style.display = 'none'; });
     }
 })();
+
+// ---- Receipt upload ----
+function triggerUpload(expenseId) {
+    currentExpenseId = expenseId;
+    document.getElementById('receiptFileInput').click();
+}
+
+document.getElementById('receiptFileInput').addEventListener('change', function() {
+    if (!this.files || !this.files[0]) return;
+    const file = this.files[0];
+    const formData = new FormData();
+    formData.append('receipt', file);
+
+    showToast('Uploading receipt...');
+
+    fetch(`/expenses/${currentExpenseId}/receipt`, {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast('✅ Receipt saved!');
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showToast('❌ ' + (data.error || 'Upload failed'));
+        }
+    })
+    .catch(() => showToast('❌ Upload failed'));
+
+    // Reset input so same file can be re-selected
+    this.value = '';
+});
+
+// ---- View receipt ----
+function viewReceipt(expenseId) {
+    currentExpenseId = expenseId;
+    document.getElementById('receiptImage').src = `/expenses/${expenseId}/receipt?t=${Date.now()}`;
+    document.getElementById('deleteReceiptBtn').onclick = function() { deleteReceipt(expenseId); };
+    new bootstrap.Modal(document.getElementById('receiptModal')).show();
+}
+
+// ---- Delete receipt ----
+function deleteReceipt(expenseId) {
+    if (!confirm('Delete this receipt?')) return;
+    fetch(`/expenses/${expenseId}/receipt/delete`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            bootstrap.Modal.getInstance(document.getElementById('receiptModal')).hide();
+            showToast('Receipt deleted');
+            setTimeout(() => location.reload(), 800);
+        }
+    });
+}
+
+// ---- Toast helper ----
+function showToast(msg) {
+    document.getElementById('uploadToastMsg').textContent = msg;
+    const toast = new bootstrap.Toast(document.getElementById('uploadToast'), {delay: 3000});
+    toast.show();
+}
 </script>
 {% endblock %}

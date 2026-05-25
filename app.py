@@ -1169,6 +1169,8 @@ def manage_users():
 @app.route('/manage/users/add', methods=['POST'])
 @login_required
 def add_user():
+    if session.get('username') != 'admin':
+        return redirect(url_for('manage_users'))
     username = request.form['username'].strip()
     password = request.form['password']
     if not username or not password:
@@ -1188,6 +1190,9 @@ def add_user():
 @app.route('/manage/users/delete/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
+    # Only admin can delete users
+    if session.get('username') != 'admin':
+        return redirect(url_for('manage_users'))
     # Prevent deleting yourself
     if user_id == session.get('user_id'):
         return redirect(url_for('manage_users'))
@@ -1202,8 +1207,11 @@ def delete_user(user_id):
 @app.route('/manage/users/change-password', methods=['POST'])
 @login_required
 def change_password():
-    user_id = request.form['user_id']
+    user_id = int(request.form['user_id'])
     new_password = request.form['new_password']
+    # Users can only change their own password
+    if user_id != session.get('user_id'):
+        return redirect(url_for('manage_users'))
     if not new_password:
         return redirect(url_for('manage_users'))
     hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')

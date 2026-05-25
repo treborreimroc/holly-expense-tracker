@@ -4,7 +4,8 @@
 <div class="container mt-4">
     <h2>👥 Manage Users</h2>
 
-    <!-- Add New User -->
+    <!-- Add New User — admin only -->
+    {% if session.username == 'admin' %}
     <div class="card mt-4">
         <div class="card-header fw-bold">Add New User</div>
         <div class="card-body">
@@ -25,17 +26,18 @@
             </form>
         </div>
     </div>
+    {% endif %}
 
     <!-- User List -->
     <div class="card mt-4">
-        <div class="card-header fw-bold">Current Users</div>
+        <div class="card-header fw-bold">Users</div>
         <div class="card-body p-0">
             <table class="table table-hover mb-0">
                 <thead class="table-dark">
                     <tr>
                         <th>Username</th>
-                        <th>Change Password</th>
-                        <th>Actions</th>
+                        <th>Change Your Password</th>
+                        {% if session.username == 'admin' %}<th>Actions</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -48,13 +50,18 @@
                             {% endif %}
                         </td>
                         <td>
+                            {% if user.id == session.user_id %}
                             <form method="POST" action="{{ url_for('change_password') }}" class="d-flex gap-2">
                                 <input type="hidden" name="user_id" value="{{ user.id }}">
                                 <input type="password" name="new_password" class="form-control form-control-sm"
                                        placeholder="New password" style="max-width:200px;" required>
                                 <button type="submit" class="btn btn-warning btn-sm">Change</button>
                             </form>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
                         </td>
+                        {% if session.username == 'admin' %}
                         <td>
                             {% if user.id != session.user_id %}
                             <form method="POST" action="{{ url_for('delete_user', user_id=user.id) }}"
@@ -65,11 +72,16 @@
                             <span class="text-muted small">Can't delete yourself</span>
                             {% endif %}
                         </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+    </div>
+
+    <div class="alert alert-info mt-4 small">
+        💡 Each user can only change their own password. Only <strong>admin</strong> can add or remove users.
     </div>
 
     <div class="mt-3">

@@ -1584,7 +1584,7 @@ def pnl_report_pdf():
         ('GRID',      (0,0), (-1,-1), 0.3, colors.HexColor('#dee2e6')),
         ('ALIGN',     (1,0), (1,-1), 'RIGHT'),
         # Income header
-        ('BACKGROUND',(0,0),(−1,0), colors.HexColor('#1a6b3c')),
+        ('BACKGROUND',(0,0),(-1,0), colors.HexColor('#1a6b3c')),
         ('TEXTCOLOR', (0,0),(-1,0), colors.white),
         ('FONTNAME',  (0,0),(-1,0), 'Helvetica-Bold'),
         # Income total

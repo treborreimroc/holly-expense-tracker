@@ -74,5 +74,18 @@
             </div>
         </div>
     </div>
+
+    <h5 class="mt-2 text-muted">System</h5>
+    <div class="row">
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-secondary">
+                <div class="card-body">
+                    <h5 class="card-title">👥 Users</h5>
+                    <p class="display-4">{{ stats.users }}</p>
+                    <a href="{{ url_for('manage_users') }}" class="btn btn-secondary btn-sm">Manage</a>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

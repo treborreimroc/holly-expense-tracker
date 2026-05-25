@@ -467,9 +467,11 @@ def manage():
     cursor.execute('SELECT COUNT(*) as count FROM expenses'); expenses_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM income'); income_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM income_categories'); income_cat_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM users'); users_count = cursor.fetchone()['count']
     cursor.close(); conn.close()
     stats = {'sources': sources_count, 'categories': categories_count, 'vendors': vendors_count,
-             'expenses': expenses_count, 'income': income_count, 'income_categories': income_cat_count}
+             'expenses': expenses_count, 'income': income_count, 'income_categories': income_cat_count,
+             'users': users_count}
     return render_template('manage.html', stats=stats)
 
 @app.route('/manage/sources')
@@ -1150,6 +1152,68 @@ def delete_receipt(expense_id):
     cursor.close()
     conn.close()
     return jsonify({'success': True})
+
+
+# ============= USER MANAGEMENT =============
+@app.route('/manage/users')
+@login_required
+def manage_users():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT id, username FROM users ORDER BY username')
+    users = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template('manage_users.html', users=users)
+
+@app.route('/manage/users/add', methods=['POST'])
+@login_required
+def add_user():
+    username = request.form['username'].strip()
+    password = request.form['password']
+    if not username or not password:
+        return redirect(url_for('manage_users'))
+    hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('INSERT INTO users (username, password) VALUES (%s, %s)', (username, hashed))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('manage_users'))
+
+@app.route('/manage/users/delete/<int:user_id>', methods=['POST'])
+@login_required
+def delete_user(user_id):
+    # Prevent deleting yourself
+    if user_id == session.get('user_id'):
+        return redirect(url_for('manage_users'))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM users WHERE id = %s', (user_id,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('manage_users'))
+
+@app.route('/manage/users/change-password', methods=['POST'])
+@login_required
+def change_password():
+    user_id = request.form['user_id']
+    new_password = request.form['new_password']
+    if not new_password:
+        return redirect(url_for('manage_users'))
+    hashed = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE users SET password = %s WHERE id = %s', (hashed, user_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return redirect(url_for('manage_users'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

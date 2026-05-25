@@ -1223,6 +1223,397 @@ def change_password():
     conn.close()
     return redirect(url_for('manage_users'))
 
+
+
+@app.route('/reports')
+@login_required
+def reports():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM income_categories ORDER BY name')
+    income_categories = cursor.fetchall()
+    cursor.execute("""
+        SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM expenses
+        UNION SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM income
+        ORDER BY yr DESC
+    """)
+    years = [r['yr'] for r in cursor.fetchall()] or [datetime.now().year]
+    cursor.close(); conn.close()
+    return render_template('reports.html',
+                         categories=categories,
+                         income_categories=income_categories,
+                         years=years,
+                         current_month=datetime.now().strftime('%Y-%m'))
+
+# ============= PDF REPORTS =============
+def make_pdf_response(buffer, filename):
+    from flask import Response
+    buffer.seek(0)
+    return Response(
+        buffer.read(),
+        mimetype='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
+def pdf_header(doc_title, period_label):
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    elements = []
+    title_style = ParagraphStyle('title', fontSize=18, fontName='Helvetica-Bold',
+                                  alignment=TA_CENTER, spaceAfter=6)
+    sub_style = ParagraphStyle('sub', fontSize=11, fontName='Helvetica',
+                                alignment=TA_CENTER, spaceAfter=16, textColor=colors.grey)
+    elements.append(Paragraph(doc_title, title_style))
+    elements.append(Paragraph(period_label, sub_style))
+    return elements
+
+@app.route('/reports/expenses/pdf')
+@login_required
+def expense_report_pdf():
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from io import BytesIO
+
+    # Get filters (same as view_expenses)
+    date_from = request.args.get('date_from', '')
+    date_to   = request.args.get('date_to', '')
+    category_id  = request.args.get('category_id', '')
+    source_id    = request.args.get('source_id', '')
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    query = """
+        SELECT e.date, e.description, s.name as source_name,
+               c.name as category_name, sc.name as subcategory_name,
+               v.name as vendor_name, e.amount, e.notes
+        FROM expenses e
+        LEFT JOIN sources s ON e.source_id = s.id
+        LEFT JOIN categories c ON e.category_id = c.id
+        LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+        LEFT JOIN vendors v ON e.vendor_id = v.id
+        WHERE e.archived = 0 AND (e.is_split = 0 OR e.is_split = 2)
+    """
+    params = []
+    if date_from: query += ' AND e.date >= %s'; params.append(date_from)
+    if date_to:   query += ' AND e.date <= %s'; params.append(date_to)
+    if category_id: query += ' AND e.category_id = %s'; params.append(category_id)
+    if source_id:   query += ' AND e.source_id = %s'; params.append(source_id)
+    query += ' ORDER BY e.date DESC'
+    cursor.execute(query, params)
+    expenses = cursor.fetchall()
+    cursor.close(); conn.close()
+
+    total = sum(float(e['amount']) for e in expenses)
+    period = f"{date_from or 'All'} to {date_to or 'All'}"
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
+                            leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+
+    elements = pdf_header('Expense Report', period)
+
+    # Table
+    data = [['Date', 'Description', 'Source', 'Category', 'Subcategory', 'Vendor', 'Amount']]
+    for e in expenses:
+        data.append([
+            str(e['date']),
+            (e['description'] or '')[:35],
+            e['source_name'] or '',
+            e['category_name'] or '',
+            e['subcategory_name'] or '',
+            e['vendor_name'] or '',
+            f"${float(e['amount']):.2f}"
+        ])
+    data.append(['', '', '', '', '', 'TOTAL', f"${total:.2f}"])
+
+    col_widths = [65, 155, 80, 85, 85, 85, 65]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0,0), (-1,-1), 8),
+        ('ALIGN',      (6,0), (6,-1), 'RIGHT'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-2), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#e8f5e9')),
+        ('FONTNAME',   (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.HexColor('#dee2e6')),
+        ('TEXTCOLOR',  (6,-1), (6,-1), colors.HexColor('#c0392b')),
+    ]))
+    elements.append(t)
+    doc.build(elements)
+    return make_pdf_response(buffer, f'expense_report_{date_from or "all"}.pdf')
+
+
+@app.route('/reports/income/pdf')
+@login_required
+def income_report_pdf():
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+    from io import BytesIO
+
+    date_from   = request.args.get('date_from', '')
+    date_to     = request.args.get('date_to', '')
+    category_id = request.args.get('category_id', '')
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    query = """
+        SELECT i.date, i.description, s.name as source_name,
+               ic.name as category_name, i.amount, i.notes
+        FROM income i
+        LEFT JOIN sources s ON i.source_id = s.id
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        WHERE i.archived = 0
+    """
+    params = []
+    if date_from: query += ' AND i.date >= %s'; params.append(date_from)
+    if date_to:   query += ' AND i.date <= %s'; params.append(date_to)
+    if category_id: query += ' AND i.category_id = %s'; params.append(category_id)
+    query += ' ORDER BY i.date DESC'
+    cursor.execute(query, params)
+    income_list = cursor.fetchall()
+    cursor.close(); conn.close()
+
+    total = sum(float(i['amount']) for i in income_list)
+    period = f"{date_from or 'All'} to {date_to or 'All'}"
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(letter),
+                            leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    elements = pdf_header('Income Report', period)
+
+    data = [['Date', 'Description', 'Source', 'Category', 'Amount', 'Notes']]
+    for i in income_list:
+        data.append([
+            str(i['date']),
+            (i['description'] or '')[:45],
+            i['source_name'] or '',
+            i['category_name'] or '',
+            f"${float(i['amount']):.2f}",
+            (i['notes'] or '')[:30]
+        ])
+    data.append(['', '', '', 'TOTAL', f"${total:.2f}", ''])
+
+    col_widths = [65, 195, 100, 110, 80, 120]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1a6b3c')),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0,0), (-1,-1), 8),
+        ('ALIGN',      (4,0), (4,-1), 'RIGHT'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-2), [colors.white, colors.HexColor('#f0faf4')]),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#e8f5e9')),
+        ('FONTNAME',   (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.HexColor('#dee2e6')),
+        ('TEXTCOLOR',  (4,-1), (4,-1), colors.HexColor('#1a6b3c')),
+    ]))
+    elements.append(t)
+    doc.build(elements)
+    return make_pdf_response(buffer, f'income_report_{date_from or "all"}.pdf')
+
+
+@app.route('/reports/budget/pdf')
+@login_required
+def budget_report_pdf():
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from io import BytesIO
+
+    month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    y, m = int(month[:4]), int(month[5:7])
+    month_start = f'{y}-{m:02d}-01'
+    month_end = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM budget WHERE month = %s', (month,))
+    cat_budgets = {r['category_id']: float(r['amount']) for r in cursor.fetchall()}
+    cursor.execute('SELECT category_id, SUM(amount) as total FROM expenses WHERE archived=0 AND date>=%s AND date<%s GROUP BY category_id', (month_start, month_end))
+    cat_spending = {r['category_id']: float(r['total']) for r in cursor.fetchall()}
+    cursor.close(); conn.close()
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                            leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    elements = pdf_header('Budget Report', month)
+
+    data = [['Category', 'Budgeted', 'Spent', 'Remaining', '% Used']]
+    total_budget = total_spent = 0
+    for cat in categories:
+        budgeted = cat_budgets.get(cat['id'], 0)
+        spent    = cat_spending.get(cat['id'], 0)
+        remaining = budgeted - spent
+        pct = f"{(spent/budgeted*100):.0f}%" if budgeted > 0 else '—'
+        data.append([
+            cat['name'],
+            f"${budgeted:.2f}" if budgeted > 0 else '—',
+            f"${spent:.2f}" if spent > 0 else '—',
+            f"${remaining:.2f}" if budgeted > 0 else '—',
+            pct
+        ])
+        total_budget += budgeted
+        total_spent  += spent
+
+    data.append(['TOTAL', f"${total_budget:.2f}", f"${total_spent:.2f}",
+                 f"${total_budget - total_spent:.2f}",
+                 f"{(total_spent/total_budget*100):.0f}%" if total_budget > 0 else '—'])
+
+    col_widths = [180, 90, 90, 90, 90]
+    t = Table(data, colWidths=col_widths, repeatRows=1)
+
+    style = [
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#2c3e50')),
+        ('TEXTCOLOR',  (0,0), (-1,0), colors.white),
+        ('FONTNAME',   (0,0), (-1,0), 'Helvetica-Bold'),
+        ('FONTSIZE',   (0,0), (-1,-1), 9),
+        ('ALIGN',      (1,0), (-1,-1), 'RIGHT'),
+        ('ROWBACKGROUNDS', (0,1), (-1,-2), [colors.white, colors.HexColor('#f8f9fa')]),
+        ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#e8f5e9')),
+        ('FONTNAME',   (0,-1), (-1,-1), 'Helvetica-Bold'),
+        ('GRID',       (0,0), (-1,-1), 0.5, colors.HexColor('#dee2e6')),
+    ]
+    # Red for over budget rows
+    for i, cat in enumerate(categories, 1):
+        budgeted = cat_budgets.get(cat['id'], 0)
+        spent    = cat_spending.get(cat['id'], 0)
+        if budgeted > 0 and spent > budgeted:
+            style.append(('TEXTCOLOR', (3,i), (3,i), colors.HexColor('#c0392b')))
+            style.append(('TEXTCOLOR', (4,i), (4,i), colors.HexColor('#c0392b')))
+
+    t.setStyle(TableStyle(style))
+    elements.append(t)
+    doc.build(elements)
+    return make_pdf_response(buffer, f'budget_report_{month}.pdf')
+
+
+@app.route('/reports/pnl/pdf')
+@login_required
+def pnl_report_pdf():
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from io import BytesIO
+
+    view_type      = request.args.get('view_type', 'month')
+    selected_month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    selected_year  = int(request.args.get('year', datetime.now().year))
+    date_from      = request.args.get('date_from', '')
+    date_to        = request.args.get('date_to', '')
+
+    if view_type == 'month':
+        y, m = int(selected_month[:4]), int(selected_month[5:7])
+        start_date = f'{y}-{m:02d}-01'
+        end_date   = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
+        period     = selected_month
+    elif view_type == 'year':
+        start_date = f'{selected_year}-01-01'
+        end_date   = f'{selected_year+1}-01-01'
+        period     = str(selected_year)
+    else:
+        start_date = date_from; end_date = date_to
+        period     = f"{date_from} to {date_to}"
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    cursor.execute("""
+        SELECT ic.name as category_name, SUM(i.amount) as total
+        FROM income i LEFT JOIN income_categories ic ON i.category_id = ic.id
+        WHERE i.archived=0 AND i.date>=%s AND i.date<%s
+        GROUP BY ic.name ORDER BY total DESC
+    """, (start_date, end_date))
+    income_rows = cursor.fetchall()
+    total_income = sum(float(r['total']) for r in income_rows)
+
+    cursor.execute("""
+        SELECT c.name as category_name, SUM(e.amount) as total
+        FROM expenses e LEFT JOIN categories c ON e.category_id = c.id
+        WHERE e.archived=0 AND e.date>=%s AND e.date<%s
+        GROUP BY c.name ORDER BY total DESC
+    """, (start_date, end_date))
+    expense_rows = cursor.fetchall()
+    total_expenses = sum(float(r['total']) for r in expense_rows)
+    cursor.close(); conn.close()
+
+    net = total_income - total_expenses
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter,
+                            leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    elements = pdf_header('Profit & Loss Statement', period)
+
+    # Income section
+    data = [['INCOME', 'Amount']]
+    for r in income_rows:
+        data.append([r['category_name'] or 'Uncategorized', f"${float(r['total']):.2f}"])
+    data.append(['Total Income', f"${total_income:.2f}"])
+    data.append(['', ''])  # spacer row
+    # Expense section
+    data.append(['EXPENSES', 'Amount'])
+    for r in expense_rows:
+        data.append([r['category_name'] or 'Uncategorized', f"${float(r['total']):.2f}"])
+    data.append(['Total Expenses', f"${total_expenses:.2f}"])
+    data.append(['', ''])
+    data.append(['NET ' + ('SURPLUS' if net >= 0 else 'DEFICIT'), f"${abs(net):.2f}"])
+
+    col_widths = [360, 120]
+    t = Table(data, colWidths=col_widths)
+
+    income_end  = len(income_rows) + 1
+    expense_start = income_end + 2
+    expense_end   = expense_start + len(expense_rows)
+    net_row = len(data) - 1
+
+    style = [
+        ('FONTSIZE',  (0,0), (-1,-1), 10),
+        ('GRID',      (0,0), (-1,-1), 0.3, colors.HexColor('#dee2e6')),
+        ('ALIGN',     (1,0), (1,-1), 'RIGHT'),
+        # Income header
+        ('BACKGROUND',(0,0),(−1,0), colors.HexColor('#1a6b3c')),
+        ('TEXTCOLOR', (0,0),(-1,0), colors.white),
+        ('FONTNAME',  (0,0),(-1,0), 'Helvetica-Bold'),
+        # Income total
+        ('BACKGROUND',(0,income_end),(-1,income_end), colors.HexColor('#e8f5e9')),
+        ('FONTNAME',  (0,income_end),(-1,income_end), 'Helvetica-Bold'),
+        # Expense header
+        ('BACKGROUND',(0,expense_start),(-1,expense_start), colors.HexColor('#c0392b')),
+        ('TEXTCOLOR', (0,expense_start),(-1,expense_start), colors.white),
+        ('FONTNAME',  (0,expense_start),(-1,expense_start), 'Helvetica-Bold'),
+        # Expense total
+        ('BACKGROUND',(0,expense_end),(-1,expense_end), colors.HexColor('#fdecea')),
+        ('FONTNAME',  (0,expense_end),(-1,expense_end), 'Helvetica-Bold'),
+        # Net row
+        ('BACKGROUND',(0,net_row),(-1,net_row),
+         colors.HexColor('#e8f5e9') if net >= 0 else colors.HexColor('#fdecea')),
+        ('FONTNAME',  (0,net_row),(-1,net_row), 'Helvetica-Bold'),
+        ('FONTSIZE',  (0,net_row),(-1,net_row), 12),
+        ('TEXTCOLOR', (1,net_row),(1,net_row),
+         colors.HexColor('#1a6b3c') if net >= 0 else colors.HexColor('#c0392b')),
+        # Alternating rows for income
+        ('ROWBACKGROUNDS', (0,1),(-1,income_end-1), [colors.white, colors.HexColor('#f0faf4')]),
+        # Alternating rows for expenses
+        ('ROWBACKGROUNDS', (0,expense_start+1),(-1,expense_end-1), [colors.white, colors.HexColor('#fef9f9')]),
+    ]
+    t.setStyle(TableStyle(style))
+    elements.append(t)
+    doc.build(elements)
+    return make_pdf_response(buffer, f'pnl_{period}.pdf')
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

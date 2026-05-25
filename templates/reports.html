@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>📄 Reports</h2>
+    <p class="text-muted">Generate and download PDF reports for any period.</p>
+
+    <div class="row mt-4">
+
+        <!-- Expense Report -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white fw-bold">📋 Expense Report</div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('expense_report_pdf') }}" target="_blank">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Date From</label>
+                            <input type="date" name="date_from" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Date To</label>
+                            <input type="date" name="date_to" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Category (optional)</label>
+                            <select name="category_id" class="form-control">
+                                <option value="">All Categories</option>
+                                {% for cat in categories %}
+                                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">⬇ Download Expense PDF</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Income Report -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white fw-bold">💵 Income Report</div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('income_report_pdf') }}" target="_blank">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Date From</label>
+                            <input type="date" name="date_from" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Date To</label>
+                            <input type="date" name="date_to" class="form-control">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Category (optional)</label>
+                            <select name="category_id" class="form-control">
+                                <option value="">All Categories</option>
+                                {% for cat in income_categories %}
+                                <option value="{{ cat.id }}">{{ cat.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-success w-100">⬇ Download Income PDF</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Report -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-warning text-dark fw-bold">📊 Budget Report</div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('budget_report_pdf') }}" target="_blank">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">Month</label>
+                            <input type="month" name="month" class="form-control"
+                                   value="{{ current_month }}">
+                        </div>
+                        <p class="text-muted small">Shows budget vs actual spending for each category, highlights over-budget items in red.</p>
+                        <button type="submit" class="btn btn-warning w-100">⬇ Download Budget PDF</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- P&L Report -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-dark text-white fw-bold">📑 P&amp;L Report</div>
+                <div class="card-body">
+                    <form method="GET" action="{{ url_for('pnl_report_pdf') }}" target="_blank">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small">View By</label>
+                            <select name="view_type" class="form-control" onchange="togglePnlInputs(this.value)">
+                                <option value="month">Month</option>
+                                <option value="year">Full Year</option>
+                                <option value="range">Date Range</option>
+                            </select>
+                        </div>
+                        <div id="pnl_month">
+                            <label class="form-label fw-bold small">Month</label>
+                            <input type="month" name="month" class="form-control mb-3" value="{{ current_month }}">
+                        </div>
+                        <div id="pnl_year" style="display:none;">
+                            <label class="form-label fw-bold small">Year</label>
+                            <select name="year" class="form-control mb-3">
+                                {% for y in years %}
+                                <option value="{{ y }}">{{ y }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div id="pnl_from" style="display:none;">
+                            <label class="form-label fw-bold small">From</label>
+                            <input type="date" name="date_from" class="form-control mb-3">
+                        </div>
+                        <div id="pnl_to" style="display:none;">
+                            <label class="form-label fw-bold small">To</label>
+                            <input type="date" name="date_to" class="form-control mb-3">
+                        </div>
+                        <button type="submit" class="btn btn-dark w-100">⬇ Download P&amp;L PDF</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+function togglePnlInputs(val) {
+    document.getElementById('pnl_month').style.display = val === 'month' ? '' : 'none';
+    document.getElementById('pnl_year').style.display  = val === 'year'  ? '' : 'none';
+    document.getElementById('pnl_from').style.display  = val === 'range' ? '' : 'none';
+    document.getElementById('pnl_to').style.display    = val === 'range' ? '' : 'none';
+}
+</script>
+{% endblock %}

@@ -109,8 +109,7 @@ def view_expenses():
     filter_search = request.args.get('search', '')
     query = """
         SELECT e.*, s.name as source_name, c.name as category_name,
-               c.color as category_color, sc.name as subcategory_name, v.name as vendor_name,
-               (e.receipt_data IS NOT NULL) as has_receipt
+               c.color as category_color, sc.name as subcategory_name, v.name as vendor_name
         FROM expenses e
         LEFT JOIN sources s ON e.source_id = s.id
         LEFT JOIN categories c ON e.category_id = c.id
@@ -132,6 +131,17 @@ def view_expenses():
     cursor.execute(query, params)
     expenses = cursor.fetchall()
     total = sum(float(e['amount']) for e in expenses)
+
+    # Check which expenses have receipts (safe — handles missing column)
+    receipt_ids = set()
+    try:
+        if expenses:
+            exp_ids = [e['id'] for e in expenses]
+            placeholders = ','.join(['%s'] * len(exp_ids))
+            cursor.execute(f'SELECT id FROM expenses WHERE id IN ({placeholders}) AND receipt_data IS NOT NULL', exp_ids)
+            receipt_ids = {r['id'] for r in cursor.fetchall()}
+    except Exception:
+        pass  # Column doesn't exist yet — receipts just won't show
     cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
     cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
     cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
@@ -140,6 +150,7 @@ def view_expenses():
     filters_active = any([filter_date_from, filter_date_to, filter_category,
                           filter_subcategory, filter_vendor, filter_source, filter_search])
     return render_template('view_expenses.html', expenses=expenses, total=total,
+                         receipt_ids=receipt_ids,
                          categories=categories, subcategories=subcategories,
                          vendors=vendors, sources=sources,
                          filter_date_from=filter_date_from, filter_date_to=filter_date_to,

@@ -17,6 +17,9 @@
                 <div class="col-md-2">
                     <button type="submit" class="btn btn-primary w-100">View</button>
                 </div>
+                <div class="col-md-4 text-muted small pt-3">
+                    Showing budget for: <strong>{{ selected_month }}</strong>
+                </div>
             </form>
         </div>
     </div>
@@ -57,42 +60,51 @@
 
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <strong>Category &amp; Subcategory Budgets — {{ selected_month }}</strong>
-                <button type="submit" class="btn btn-primary btn-sm">💾 Save All Budgets</button>
+                <strong>Category Budgets — {{ selected_month }}</strong>
+                <div>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" onclick="expandAll()">Expand All</button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm me-2" onclick="collapseAll()">Collapse All</button>
+                    <button type="submit" class="btn btn-primary btn-sm">💾 Save All Budgets</button>
+                </div>
             </div>
             <div class="card-body p-0">
                 <table class="table table-hover mb-0">
                     <thead class="table-dark">
                         <tr>
-                            <th style="width:30%">Category / Subcategory</th>
-                            <th>Budget</th>
-                            <th>Spent</th>
-                            <th>Remaining</th>
+                            <th style="width:35%">Category / Subcategory</th>
+                            <th class="text-end">Budget</th>
+                            <th class="text-end">Spent</th>
+                            <th class="text-end">Remaining</th>
                             <th style="width:20%">Progress</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for cat in budget_data %}
+                        {% set cat_slug = cat.category_name | replace(' ', '_') | replace('/', '_') %}
 
-                        <!-- Category Row -->
-                        <tr class="table-secondary">
+                        <!-- Category Row — click to expand/collapse -->
+                        <tr class="table-secondary category-row"
+                            onclick="toggleSubs('subs_{{ cat_slug }}')"
+                            style="cursor:pointer;"
+                            title="Click to expand/collapse subcategories">
                             <td class="fw-bold">
-                                <span class="badge me-2" style="background-color: {{ cat.color }}">
-                                    {{ cat.category_name }}
-                                </span>
+                                <span class="expand-icon me-1" id="icon_{{ cat_slug }}">▶</span>
+                                <span class="badge me-1" style="background-color: {{ cat.color }}">{{ cat.category_name }}</span>
+                                {% if cat.subcategories %}<small class="text-muted">({{ cat.subcategories|length }} subcategories)</small>{% endif %}
                             </td>
-                            <td>
-                                <div class="input-group input-group-sm" style="width:130px;">
+                            <td class="text-end">
+                                <div class="input-group input-group-sm justify-content-end" style="width:130px; margin-left:auto;">
                                     <span class="input-group-text">$</span>
                                     <input type="number" step="0.01" min="0"
                                            name="cat_{{ cat.category_id }}"
                                            class="form-control"
                                            value="{{ cat.budgeted if cat.budgeted > 0 else '' }}"
-                                           placeholder="0.00">
+                                           placeholder="0.00"
+                                           onclick="event.stopPropagation()">
                                 </div>
                             </td>
-                            <td class="fw-bold">${{ "%.2f"|format(cat.spent) }}</td>
-                            <td class="fw-bold {% if cat.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <td class="text-end fw-bold">${{ "%.2f"|format(cat.spent) }}</td>
+                            <td class="fw-bold text-end {% if cat.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 ${{ "%.2f"|format(cat.remaining) }}
                             </td>
                             <td>
@@ -110,14 +122,15 @@
                             </td>
                         </tr>
 
-                        <!-- Subcategory Rows -->
+                        <!-- Subcategory Rows — hidden by default -->
+                        {% if cat.subcategories %}
                         {% for sub in cat.subcategories %}
-                        <tr>
-                            <td class="ps-4 text-muted">
+                        <tr class="subcat-row d-none" data-group="subs_{{ cat_slug }}" style="background-color:#fafafa;">
+                            <td class="ps-5 text-muted">
                                 ↳ {{ sub.subcategory_name }}
                             </td>
-                            <td>
-                                <div class="input-group input-group-sm" style="width:130px;">
+                            <td class="text-end">
+                                <div class="input-group input-group-sm justify-content-end" style="width:130px; margin-left:auto;">
                                     <span class="input-group-text">$</span>
                                     <input type="number" step="0.01" min="0"
                                            name="sub_{{ sub.subcategory_id }}"
@@ -126,8 +139,8 @@
                                            placeholder="0.00">
                                 </div>
                             </td>
-                            <td>${{ "%.2f"|format(sub.spent) }}</td>
-                            <td class="{% if sub.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <td class="text-end small">${{ "%.2f"|format(sub.spent) }}</td>
+                            <td class="text-end small {% if sub.remaining >= 0 %}text-success{% else %}text-danger{% endif %}">
                                 ${{ "%.2f"|format(sub.remaining) }}
                             </td>
                             <td>
@@ -145,12 +158,14 @@
                             </td>
                         </tr>
                         {% endfor %}
+                        {% endif %}
 
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div class="card-footer">
+            <div class="card-footer d-flex justify-content-between align-items-center">
+                <small class="text-muted">💡 Click a category to expand subcategories. Budget inputs save together.</small>
                 <button type="submit" class="btn btn-primary">💾 Save All Budgets</button>
             </div>
         </div>
@@ -170,4 +185,35 @@
         </div>
     </div>
 </div>
+
+<style>
+.category-row:hover { background-color: #e9ecef !important; }
+.subcat-row:hover { background-color: #e8f0fe !important; }
+@media print {
+    .subcat-row { display: table-row !important; }
+    .navbar { display: none !important; }
+    .d-print-none { display: none !important; }
+}
+</style>
+
+<script>
+function toggleSubs(groupId) {
+    const rows = document.querySelectorAll(`[data-group="${groupId}"]`);
+    const iconId = 'icon_' + groupId.replace('subs_', '');
+    const icon = document.getElementById(iconId);
+    const anyVisible = Array.from(rows).some(r => !r.classList.contains('d-none'));
+    rows.forEach(r => anyVisible ? r.classList.add('d-none') : r.classList.remove('d-none'));
+    if (icon) icon.textContent = anyVisible ? '▶' : '▼';
+}
+
+function expandAll() {
+    document.querySelectorAll('.subcat-row').forEach(r => r.classList.remove('d-none'));
+    document.querySelectorAll('.expand-icon').forEach(i => i.textContent = '▼');
+}
+
+function collapseAll() {
+    document.querySelectorAll('.subcat-row').forEach(r => r.classList.add('d-none'));
+    document.querySelectorAll('.expand-icon').forEach(i => i.textContent = '▶');
+}
+</script>
 {% endblock %}

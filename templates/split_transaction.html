@@ -1,428 +1,266 @@
 {% extends "base.html" %}
 
-{% block title %}Split Transaction - Expense Tracker{% endblock %}
+{% block title %}Split Transaction{% endblock %}
 
 {% block content %}
-<div style="max-width: 1400px; margin: 0 auto;">
-    
-    <!-- Header -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
-        <h1 style="color: #495057; margin: 0;">🔀 Split Transaction</h1>
-        <a href="{{ url_for('view_expenses') }}" class="btn btn-secondary">✕ Close</a>
-    </div>
+<div class="container mt-4">
+    <h2>🔀 Split Transaction</h2>
 
-    <!-- Transaction Details (Locked) -->
-    <div style="background: #e7f3ff; border: 2px solid #17a2b8; padding: 20px; border-radius: 10px; margin-bottom: 30px;">
-        <h3 style="margin: 0 0 15px 0; color: #004085;">Original Transaction</h3>
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
-            <div>
-                <strong>Date:</strong><br>
-                {{ expense.date }}
-            </div>
-            <div>
-                <strong>Source:</strong><br>
-                {{ source.name if source else expense.source_id }}
-            </div>
-            <div style="grid-column: span 2;">
-                <strong>Description:</strong><br>
-                {{ expense.description }}
+    <!-- Original Transaction (locked) -->
+    <div class="card mb-4 border-primary">
+        <div class="card-header bg-primary text-white fw-bold">
+            Original Transaction
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-2">
+                    <label class="form-label text-muted small">Date</label>
+                    <p class="fw-bold">{{ expense.date }}</p>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-muted small">Description</label>
+                    <p class="fw-bold">{{ expense.description or '—' }}</p>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small">Source</label>
+                    <p class="fw-bold">{{ expense.source_name or '—' }}</p>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label text-muted small">Original Amount</label>
+                    <p class="fw-bold fs-5 text-primary">${{ "%.2f"|format(expense.amount) }}</p>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label text-muted small">Running Total</label>
+                    <p class="fw-bold fs-5" id="runningTotal">$0.00
+                        <small id="totalStatus" class="ms-2"></small>
+                    </p>
+                </div>
             </div>
         </div>
-        <div style="margin-top: 15px; padding: 15px; background: white; border-radius: 5px; text-align: center;">
-            <strong style="font-size: 18px; color: #17a2b8;">Receipt Total: ${{ "%.2f"|format(expense.amount) }}</strong>
-        </div>
     </div>
 
-    <!-- Split Table Form -->
-    <form method="POST" action="{{ url_for('save_split_transaction', expense_id=expense.id) }}" id="splitForm">
-        <input type="hidden" name="splits_data" id="splitsData">
-        
-        <div style="background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-            <h3 style="margin: 0 0 20px 0; color: #495057;">Split Details</h3>
-            
-            <!-- Split Table -->
-            <table id="splitTable" style="width: 100%; border-collapse: collapse;">
-                <thead>
-                    <tr style="background: #f8f9fa; border-bottom: 2px solid #dee2e6;">
-                        <th style="padding: 12px; text-align: left; width: 18%;">Category</th>
-                        <th style="padding: 12px; text-align: left; width: 18%;">Subcategory</th>
-                        <th style="padding: 12px; text-align: left; width: 18%;">Vendor</th>
-                        <th style="padding: 12px; text-align: left; width: 18%;">Tax Rate</th>
-                        <th style="padding: 12px; text-align: right; width: 15%;">Amount</th>
-                        <th style="padding: 12px; text-align: center; width: 8%;"></th>
+    <!-- Split Table -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Split Rows</strong>
+            <button type="button" class="btn btn-success btn-sm" onclick="addRow()">+ Add Row</button>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0" id="splitTable">
+                <thead class="table-dark">
+                    <tr>
+                        <th>#</th>
+                        <th>Amount</th>
+                        <th>Category</th>
+                        <th>Subcategory</th>
+                        <th>Vendor</th>
+                        <th>Description</th>
+                        <th>Notes</th>
+                        <th></th>
                     </tr>
                 </thead>
-                <tbody id="splitTableBody">
-                    {% if splits %}
-                        {% for split in splits %}
-                        <tr class="split-row" style="border-bottom: 1px solid #dee2e6;">
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-category" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">Select...</option>
-                                        {% for cat in categories %}
-                                        <option value="{{ cat.id }}" {% if split.category_id == cat.id %}selected{% endif %}>{{ cat.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewCategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-subcategory" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">None</option>
-                                        {% for sub in subcategories %}
-                                        <option value="{{ sub.id }}" {% if split.subcategory_id == sub.id %}selected{% endif %}>{{ sub.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewSubcategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-vendor" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">None</option>
-                                        {% for vendor in vendors %}
-                                        <option value="{{ vendor.id }}" {% if split.vendor_id == vendor.id %}selected{% endif %}>{{ vendor.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewVendor(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <select class="split-tax-rate" data-rate="0" onchange="updateTaxSummary()" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                    <option value="" data-rate="0">No Tax (0%)</option>
-                                    {% for rate in tax_rates %}
-                                    <option value="{{ rate.id }}" data-rate="{{ rate.rate }}" {% if split.tax_rate_id == rate.id %}selected{% endif %}>{{ rate.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </td>
-                            <td style="padding: 10px;">
-                                <input type="number" step="0.01" class="split-amount" value="{{ split.amount }}" 
-                                       onchange="updateTaxSummary()"
-                                       style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; text-align: right;">
-                            </td>
-                            <td style="padding: 10px; text-align: center;">
-                                <button type="button" onclick="deleteRow(this)" class="btn btn-danger btn-small">✕</button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    {% else %}
-                        <tr class="split-row" style="border-bottom: 1px solid #dee2e6;">
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-category" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">Select...</option>
-                                        {% for cat in categories %}
-                                        <option value="{{ cat.id }}">{{ cat.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewCategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-subcategory" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">None</option>
-                                        {% for sub in subcategories %}
-                                        <option value="{{ sub.id }}">{{ sub.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewSubcategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <div style="display: flex; gap: 5px;">
-                                    <select class="split-vendor" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                        <option value="">None</option>
-                                        {% for vendor in vendors %}
-                                        <option value="{{ vendor.id }}">{{ vendor.name }}</option>
-                                        {% endfor %}
-                                    </select>
-                                    <button type="button" onclick="addNewVendor(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-                                </div>
-                            </td>
-                            <td style="padding: 10px;">
-                                <select class="split-tax-rate" data-rate="0" onchange="updateTaxSummary()" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                                    <option value="" data-rate="0">No Tax (0%)</option>
-                                    {% for rate in tax_rates %}
-                                    <option value="{{ rate.id }}" data-rate="{{ rate.rate }}">{{ rate.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </td>
-                            <td style="padding: 10px;">
-                                <input type="number" step="0.01" class="split-amount" 
-                                       onchange="updateTaxSummary()"
-                                       style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; text-align: right;">
-                            </td>
-                            <td style="padding: 10px; text-align: center;">
-                                <button type="button" onclick="deleteRow(this)" class="btn btn-danger btn-small">✕</button>
-                            </td>
-                        </tr>
-                    {% endif %}
+                <tbody id="splitBody">
+                    <!-- Rows added by JS -->
                 </tbody>
             </table>
-            
-            <!-- Tax Summary -->
-            <div style="margin-top: 20px; padding: 20px; background: #fff3cd; border-radius: 5px; border: 2px solid #ffc107;">
-                <h4 style="margin: 0 0 15px 0;">Tax Summary</h4>
-                <div id="taxBreakdown" style="font-family: monospace;"></div>
-                <div style="margin-top: 15px; padding-top: 15px; border-top: 2px solid #856404;">
-                    <div style="display: flex; justify-content: space-between; font-size: 18px; font-weight: bold;">
-                        <span>Receipt Total:</span>
-                        <span id="calculatedTotal">$0.00</span>
-                    </div>
-                    <div style="margin-top: 5px; font-size: 14px; color: #856404;">
-                        Should equal: ${{ "%.2f"|format(expense.amount) }}
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Validation Message -->
-            <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 5px; text-align: center;">
-                <strong style="font-size: 18px;" id="validationMessage">Calculating...</strong>
-            </div>
-            
-            <!-- Action Buttons -->
-            <div style="margin-top: 30px; display: flex; gap: 15px; justify-content: space-between;">
-                <button type="button" onclick="addRow()" class="btn btn-secondary">
-                    + Add Row
-                </button>
-                
-                <div style="display: flex; gap: 15px;">
-                    {% if splits %}
-                    <form action="{{ url_for('reset_split', expense_id=expense.id) }}" method="POST" style="display: inline;" 
-                          onsubmit="return confirm('Reset this transaction? All splits will be deleted.');">
-                        <button type="submit" class="btn btn-warning">🔄 Reset Transaction</button>
-                    </form>
-                    {% endif %}
-                    
-                    <button type="submit" class="btn btn-primary" style="font-size: 16px; padding: 12px 30px;">
-                        💾 Save Split Transaction
-                    </button>
-                </div>
-            </div>
         </div>
-    </form>
+    </div>
 
+    <!-- Action Buttons -->
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-primary btn-lg" id="saveBtn" onclick="saveSplit()" disabled>
+            💾 Save Split Transaction
+        </button>
+        <button type="button" class="btn btn-outline-danger" onclick="resetTransaction()">
+            ↩ Reset to Single Transaction
+        </button>
+        <a href="{{ url_for('view_expenses') }}" class="btn btn-secondary">Cancel</a>
+    </div>
 </div>
 
+<!-- Hidden data for JS -->
+<div id="pageData"
+     data-expense-id="{{ expense.id }}"
+     data-original-amount="{{ expense.amount }}"
+     data-existing-splits="{{ splits_json }}"
+     style="display:none;">
+</div>
+
+<!-- Category/subcategory data for dropdowns -->
+<div id="categoriesData" style="display:none;">{{ categories_json }}</div>
+<div id="subcategoriesData" style="display:none;">{{ subcategories_json }}</div>
+<div id="vendorsData" style="display:none;">{{ vendors_json }}</div>
+
 <script>
-const originalAmount = {{ expense.amount }};
+const pageData = document.getElementById('pageData');
+const EXPENSE_ID = pageData.dataset.expenseId;
+const ORIGINAL_AMOUNT = parseFloat(pageData.dataset.originalAmount);
+const EXISTING_SPLITS = JSON.parse(pageData.dataset.existingSplits);
 
-// Template for new row (will be populated dynamically)
-function getRowTemplate() {
-    return `
-<tr class="split-row" style="border-bottom: 1px solid #dee2e6;">
-    <td style="padding: 10px;">
-        <div style="display: flex; gap: 5px;">
-            <select class="split-category" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                <option value="">Select...</option>
-                {% for cat in categories %}
-                <option value="{{ cat.id }}">{{ cat.name }}</option>
-                {% endfor %}
-            </select>
-            <button type="button" onclick="addNewCategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-        </div>
-    </td>
-    <td style="padding: 10px;">
-        <div style="display: flex; gap: 5px;">
-            <select class="split-subcategory" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                <option value="">None</option>
-                {% for sub in subcategories %}
-                <option value="{{ sub.id }}">{{ sub.name }}</option>
-                {% endfor %}
-            </select>
-            <button type="button" onclick="addNewSubcategory(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-        </div>
-    </td>
-    <td style="padding: 10px;">
-        <div style="display: flex; gap: 5px;">
-            <select class="split-vendor" style="flex: 1; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-                <option value="">None</option>
-                {% for vendor in vendors %}
-                <option value="{{ vendor.id }}">{{ vendor.name }}</option>
-                {% endfor %}
-            </select>
-            <button type="button" onclick="addNewVendor(this)" class="btn btn-sm" style="padding: 8px 12px; background: #28a745; color: white; border: none; border-radius: 4px;">+</button>
-        </div>
-    </td>
-    <td style="padding: 10px;">
-        <select class="split-tax-rate" data-rate="0" onchange="updateTaxSummary()" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
-            <option value="" data-rate="0">No Tax (0%)</option>
-            {% for rate in tax_rates %}
-            <option value="{{ rate.id }}" data-rate="{{ rate.rate }}">{{ rate.name }}</option>
-            {% endfor %}
-        </select>
-    </td>
-    <td style="padding: 10px;">
-        <input type="number" step="0.01" class="split-amount" onchange="updateTaxSummary()"
-               style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; text-align: right;">
-    </td>
-    <td style="padding: 10px; text-align: center;">
-        <button type="button" onclick="deleteRow(this)" class="btn btn-danger btn-small">✕</button>
-    </td>
-</tr>
-`;
-}
+const categories = JSON.parse(document.getElementById('categoriesData').textContent);
+const subcategories = JSON.parse(document.getElementById('subcategoriesData').textContent);
+const vendors = JSON.parse(document.getElementById('vendorsData').textContent);
 
-function addRow() {
-    document.getElementById('splitTableBody').insertAdjacentHTML('beforeend', getRowTemplate());
-    updateTaxSummary();
-}
+let rowCount = 0;
 
-function deleteRow(button) {
-    const rows = document.querySelectorAll('.split-row');
-    if (rows.length > 1) {
-        button.closest('tr').remove();
-        updateTaxSummary();
-    }
-    // Keep at least one row - just don't delete if only one left
-}
-
-// Add New functions (inline prompts for now)
-function addNewCategory(button) {
-    const name = prompt('Enter new category name:');
-    if (name && name.trim()) {
-        // TODO: Add AJAX call to create category
-        // For now, user can use Manage page
-    }
-}
-
-function addNewSubcategory(button) {
-    const name = prompt('Enter new subcategory name:');
-    if (name && name.trim()) {
-        // TODO: Add AJAX call to create subcategory
-        // For now, user can use Manage page
-    }
-}
-
-function addNewVendor(button) {
-    const name = prompt('Enter new vendor name:');
-    if (name && name.trim()) {
-        // TODO: Add AJAX call to create vendor
-        // For now, user can use Manage page
-    }
-}
-
-function updateTaxSummary() {
-    const rows = document.querySelectorAll('.split-row');
-    
-    // Group amounts by tax rate
-    const taxGroups = {};
-    let subtotalSum = 0;
-    
-    rows.forEach(row => {
-        const amount = parseFloat(row.querySelector('.split-amount').value) || 0;
-        const taxSelect = row.querySelector('.split-tax-rate');
-        const selectedOption = taxSelect.options[taxSelect.selectedIndex];
-        const taxRate = parseFloat(selectedOption.getAttribute('data-rate')) || 0;
-        const taxName = selectedOption.text;
-        
-        if (!taxGroups[taxName]) {
-            taxGroups[taxName] = { rate: taxRate, subtotal: 0 };
-        }
-        taxGroups[taxName].subtotal += amount;
-        subtotalSum += amount;
+function buildCategoryOptions(selectedId) {
+    let html = '<option value="">Select Category...</option>';
+    categories.forEach(c => {
+        html += `<option value="${c.id}" ${c.id == selectedId ? 'selected' : ''}>${c.name}</option>`;
     });
-    
-    // Build tax breakdown display
-    let breakdownHTML = '';
-    let totalTax = 0;
-    
-    for (const [taxName, data] of Object.entries(taxGroups)) {
-        const tax = data.subtotal * (data.rate / 100);
-        totalTax += tax;
-        
-        breakdownHTML += `
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span>${taxName} items:</span>
-                <span>$${data.subtotal.toFixed(2)} ${data.rate > 0 ? '→ Tax: $' + tax.toFixed(2) : ''}</span>
-            </div>
-        `;
+    return html;
+}
+
+function buildSubcategoryOptions(selectedCatId, selectedSubId) {
+    let html = '<option value="">None</option>';
+    subcategories.filter(s => s.category_id == selectedCatId).forEach(s => {
+        html += `<option value="${s.id}" ${s.id == selectedSubId ? 'selected' : ''}>${s.name}</option>`;
+    });
+    return html;
+}
+
+function buildVendorOptions(selectedId) {
+    let html = '<option value="">None</option>';
+    vendors.forEach(v => {
+        html += `<option value="${v.id}" ${v.id == selectedId ? 'selected' : ''}>${v.name}</option>`;
+    });
+    return html;
+}
+
+function addRow(data) {
+    rowCount++;
+    const d = data || {};
+    const tbody = document.getElementById('splitBody');
+    const tr = document.createElement('tr');
+    tr.id = `row_${rowCount}`;
+    tr.innerHTML = `
+        <td class="fw-bold text-muted">${rowCount}</td>
+        <td>
+            <input type="number" step="0.01" min="0.01" class="form-control form-control-sm split-amount"
+                   style="width:110px;" value="${d.amount || ''}" placeholder="0.00"
+                   oninput="updateTotal()">
+        </td>
+        <td>
+            <select class="form-control form-control-sm split-category" style="min-width:140px;"
+                    onchange="updateSubcategories(this, ${rowCount})">
+                ${buildCategoryOptions(d.category_id)}
+            </select>
+        </td>
+        <td>
+            <select class="form-control form-control-sm split-subcategory" id="sub_${rowCount}" style="min-width:130px;">
+                ${buildSubcategoryOptions(d.category_id, d.subcategory_id)}
+            </select>
+        </td>
+        <td>
+            <select class="form-control form-control-sm split-vendor" style="min-width:130px;">
+                ${buildVendorOptions(d.vendor_id)}
+            </select>
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm split-description"
+                   style="min-width:130px;" value="${d.description || ''}" placeholder="Optional">
+        </td>
+        <td>
+            <input type="text" class="form-control form-control-sm split-notes"
+                   style="min-width:110px;" value="${d.notes || ''}" placeholder="Optional">
+        </td>
+        <td>
+            <button type="button" class="btn btn-danger btn-sm" onclick="removeRow(${rowCount})">✕</button>
+        </td>
+    `;
+    tbody.appendChild(tr);
+    updateTotal();
+}
+
+function updateSubcategories(catSelect, rowId) {
+    const catId = catSelect.value;
+    const subSelect = document.getElementById(`sub_${rowId}`);
+    subSelect.innerHTML = '<option value="">None</option>';
+    subcategories.filter(s => s.category_id == catId).forEach(s => {
+        subSelect.innerHTML += `<option value="${s.id}">${s.name}</option>`;
+    });
+}
+
+function removeRow(rowId) {
+    const tbody = document.getElementById('splitBody');
+    if (tbody.children.length <= 1) {
+        alert('You need at least one split row.');
+        return;
     }
-    
-    document.getElementById('taxBreakdown').innerHTML = breakdownHTML;
-    
-    const total = subtotalSum + totalTax;
-    document.getElementById('calculatedTotal').textContent = '$' + total.toFixed(2);
-    
-    // Validation
-    const diff = Math.abs(total - originalAmount);
-    const validationEl = document.getElementById('validationMessage');
-    
-    if (diff < 0.01) {
-        validationEl.textContent = '✓ Total matches receipt!';
-        validationEl.style.color = '#28a745';
+    document.getElementById(`row_${rowId}`).remove();
+    updateTotal();
+}
+
+function updateTotal() {
+    const amounts = document.querySelectorAll('.split-amount');
+    let total = 0;
+    amounts.forEach(a => { total += parseFloat(a.value) || 0; });
+
+    const diff = Math.abs(total - ORIGINAL_AMOUNT);
+    const matched = diff < 0.01;
+
+    document.getElementById('runningTotal').childNodes[0].textContent = `$${total.toFixed(2)} `;
+    const status = document.getElementById('totalStatus');
+    if (matched) {
+        status.className = 'ms-2 text-success fw-bold';
+        status.textContent = '✓ Matches';
     } else {
-        validationEl.textContent = `⚠ Difference: $${(total - originalAmount).toFixed(2)}`;
-        validationEl.style.color = '#e74c3c';
+        const remaining = ORIGINAL_AMOUNT - total;
+        status.className = 'ms-2 text-danger fw-bold';
+        status.textContent = remaining > 0 ? `$${remaining.toFixed(2)} remaining` : `$${Math.abs(remaining).toFixed(2)} over`;
     }
+
+    document.getElementById('saveBtn').disabled = !matched || amounts.length === 0;
 }
 
-// Form submission
-document.getElementById('splitForm').addEventListener('submit', function(e) {
-    e.preventDefault();
-    
-    // Collect all splits
+function saveSplit() {
+    const rows = document.querySelectorAll('#splitBody tr');
     const splits = [];
-    document.querySelectorAll('.split-row').forEach(row => {
-        const amount = row.querySelector('.split-amount').value;
-        const taxSelect = row.querySelector('.split-tax-rate');
-        const selectedOption = taxSelect.options[taxSelect.selectedIndex];
-        const taxRate = parseFloat(selectedOption.getAttribute('data-rate')) || 0;
-        
-        if (amount && parseFloat(amount) > 0) {
-            splits.push({
-                category_id: row.querySelector('.split-category').value || null,
-                subcategory_id: row.querySelector('.split-subcategory').value || null,
-                vendor_id: row.querySelector('.split-vendor').value || null,
-                amount: amount,
-                tax_rate_id: taxSelect.value || null,
-                tax_rate: taxRate
-            });
+    rows.forEach(row => {
+        splits.push({
+            amount: parseFloat(row.querySelector('.split-amount').value) || 0,
+            category_id: row.querySelector('.split-category').value || null,
+            subcategory_id: row.querySelector('.split-subcategory').value || null,
+            vendor_id: row.querySelector('.split-vendor').value || null,
+            description: row.querySelector('.split-description').value,
+            notes: row.querySelector('.split-notes').value
+        });
+    });
+
+    fetch(`/expenses/split/${EXPENSE_ID}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({splits: splits})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = '/view-expenses';
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
         }
-    });
-    
-    if (splits.length === 0) {
-        alert('Please add at least one split with an amount!');
-        return;
-    }
-    
-    // Calculate expected total with tax
-    let subtotalSum = 0;
-    let totalTax = 0;
-    
-    splits.forEach(split => {
-        const amount = parseFloat(split.amount);
-        const tax = amount * (split.tax_rate / 100);
-        subtotalSum += amount;
-        totalTax += tax;
-    });
-    
-    const calculatedTotal = subtotalSum + totalTax;
-    
-    // Validate
-    if (Math.abs(calculatedTotal - originalAmount) > 0.01) {
-        alert(`Total with tax ($${calculatedTotal.toFixed(2)}) must equal receipt total ($${originalAmount.toFixed(2)})`);
-        return;
-    }
-    
-    // Save to hidden field and submit
-    document.getElementById('splitsData').value = JSON.stringify(splits);
-    this.submit();
-});
+    })
+    .catch(() => alert('Error saving split transaction.'));
+}
 
-// Prevent Enter key from submitting form
-document.getElementById('splitForm').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-        e.preventDefault();
-        return false;
-    }
-});
+function resetTransaction() {
+    if (!confirm('Reset this back to a single transaction? All splits will be deleted.')) return;
+    fetch(`/expenses/split/reset/${EXPENSE_ID}`, { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) window.location.href = '/view-expenses';
+        else alert('Error resetting transaction.');
+    });
+}
 
-// Initialize
-updateTaxSummary();
+// Load existing splits or add 2 empty rows to start
+window.onload = function() {
+    if (EXISTING_SPLITS.length > 0) {
+        EXISTING_SPLITS.forEach(s => addRow(s));
+    } else {
+        addRow();
+        addRow();
+    }
+};
 </script>
-
 {% endblock %}

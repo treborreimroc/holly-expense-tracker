@@ -114,7 +114,7 @@ def view_expenses():
         LEFT JOIN categories c ON e.category_id = c.id
         LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
         LEFT JOIN vendors v ON e.vendor_id = v.id
-        WHERE e.archived = 0
+        WHERE e.archived = 0 AND (e.is_split = 0 OR e.is_split = 2)
     """
     params = []
     if filter_date_from: query += ' AND e.date >= %s'; params.append(filter_date_from)
@@ -932,6 +932,145 @@ def pnl_detail():
 
     total = sum(t['amount'] for t in transactions)
     return jsonify({'transactions': transactions, 'total': total})
+
+
+# ============= SPLIT TRANSACTIONS =============
+@app.route('/expenses/split/<int:expense_id>', methods=['GET'])
+@login_required
+def split_transaction(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Get the parent expense (or the child — find the root)
+    cursor.execute("""
+        SELECT e.*, s.name as source_name
+        FROM expenses e
+        LEFT JOIN sources s ON e.source_id = s.id
+        WHERE e.id = %s
+    """, (expense_id,))
+    expense = cursor.fetchone()
+
+    if not expense:
+        cursor.close(); conn.close()
+        return "Expense not found", 404
+
+    # If this is a child split, find the parent
+    if expense['parent_transaction_id']:
+        parent_id = expense['parent_transaction_id']
+        cursor.execute("""
+            SELECT e.*, s.name as source_name FROM expenses e
+            LEFT JOIN sources s ON e.source_id = s.id
+            WHERE e.id = %s
+        """, (parent_id,))
+        expense = cursor.fetchone()
+        expense_id = parent_id
+
+    # Get existing child splits
+    cursor.execute("""
+        SELECT e.*, c.name as category_name, sc.name as subcategory_name, v.name as vendor_name
+        FROM expenses e
+        LEFT JOIN categories c ON e.category_id = c.id
+        LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+        LEFT JOIN vendors v ON e.vendor_id = v.id
+        WHERE e.parent_transaction_id = %s
+        ORDER BY e.id
+    """, (expense_id,))
+    existing_splits = cursor.fetchall()
+
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name')
+    subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name')
+    vendors = cursor.fetchall()
+    cursor.close(); conn.close()
+
+    # Build JSON for JS
+    splits_json = json.dumps([{
+        'amount': float(s['amount']),
+        'category_id': s['category_id'],
+        'subcategory_id': s['subcategory_id'],
+        'vendor_id': s['vendor_id'],
+        'description': s['description'] or '',
+        'notes': s['notes'] or ''
+    } for s in existing_splits])
+
+    categories_json = json.dumps([{'id': c['id'], 'name': c['name']} for c in categories])
+    subcategories_json = json.dumps([{'id': s['id'], 'name': s['name'], 'category_id': s['category_id']} for s in subcategories])
+    vendors_json = json.dumps([{'id': v['id'], 'name': v['name']} for v in vendors])
+
+    return render_template('split_transaction.html',
+                         expense=expense,
+                         splits_json=splits_json,
+                         categories_json=categories_json,
+                         subcategories_json=subcategories_json,
+                         vendors_json=vendors_json)
+
+@app.route('/expenses/split/<int:expense_id>', methods=['POST'])
+@login_required
+def save_split_transaction(expense_id):
+    import json as json_lib
+    data = request.get_json()
+    splits = data.get('splits', [])
+
+    if not splits:
+        return jsonify({'success': False, 'error': 'No splits provided'})
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    # Get original expense
+    cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
+    original = cursor.fetchone()
+    if not original:
+        cursor.close(); conn.close()
+        return jsonify({'success': False, 'error': 'Expense not found'})
+
+    # Validate total
+    total = sum(float(s['amount']) for s in splits)
+    if abs(total - float(original['amount'])) > 0.01:
+        cursor.close(); conn.close()
+        return jsonify({'success': False, 'error': f'Split total ${total:.2f} must equal original ${float(original["amount"]):.2f}'})
+
+    # Delete any existing child splits
+    cursor.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
+
+    # Mark original as parent
+    cursor.execute('UPDATE expenses SET is_split = 1 WHERE id = %s', (expense_id,))
+
+    # Insert child splits
+    for split in splits:
+        cursor.execute("""
+            INSERT INTO expenses
+                (date, source_id, description, category_id, subcategory_id,
+                 vendor_id, amount, notes, parent_transaction_id, is_split, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 2, CURRENT_TIMESTAMP)
+        """, (
+            original['date'],
+            original['source_id'],
+            split.get('description') or original['description'],
+            split.get('category_id') or None,
+            split.get('subcategory_id') or None,
+            split.get('vendor_id') or None,
+            float(split['amount']),
+            split.get('notes', ''),
+            expense_id
+        ))
+
+    conn.commit()
+    cursor.close(); conn.close()
+    return jsonify({'success': True})
+
+@app.route('/expenses/split/reset/<int:expense_id>', methods=['POST'])
+@login_required
+def reset_split_transaction(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
+    cursor.execute('UPDATE expenses SET is_split = 0 WHERE id = %s', (expense_id,))
+    conn.commit()
+    cursor.close(); conn.close()
+    return jsonify({'success': True})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

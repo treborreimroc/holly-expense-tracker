@@ -17,74 +17,52 @@
         <div class="card-body">
             <form method="GET" action="{{ url_for('view_expenses') }}">
                 <div class="row g-2">
-                    <!-- Date Range -->
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Date From</label>
-                        <input type="date" name="date_from" class="form-control form-control-sm"
-                               value="{{ filter_date_from }}">
+                        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filter_date_from }}">
                     </div>
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Date To</label>
-                        <input type="date" name="date_to" class="form-control form-control-sm"
-                               value="{{ filter_date_to }}">
+                        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filter_date_to }}">
                     </div>
-
-                    <!-- Category -->
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Category</label>
                         <select name="category_id" id="filter_category" class="form-control form-control-sm">
                             <option value="">All Categories</option>
                             {% for cat in categories %}
-                            <option value="{{ cat.id }}" {% if filter_category == cat.id|string %}selected{% endif %}>
-                                {{ cat.name }}
-                            </option>
+                            <option value="{{ cat.id }}" {% if filter_category == cat.id|string %}selected{% endif %}>{{ cat.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
-
-                    <!-- Subcategory -->
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Subcategory</label>
                         <select name="subcategory_id" id="filter_subcategory" class="form-control form-control-sm">
                             <option value="">All Subcategories</option>
                             {% for sub in subcategories %}
-                            <option value="{{ sub.id }}"
-                                    data-category="{{ sub.category_id }}"
-                                    {% if filter_subcategory == sub.id|string %}selected{% endif %}>
-                                {{ sub.name }}
-                            </option>
+                            <option value="{{ sub.id }}" data-category="{{ sub.category_id }}"
+                                    {% if filter_subcategory == sub.id|string %}selected{% endif %}>{{ sub.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
-
-                    <!-- Vendor -->
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Vendor</label>
                         <select name="vendor_id" class="form-control form-control-sm">
                             <option value="">All Vendors</option>
                             {% for vendor in vendors %}
-                            <option value="{{ vendor.id }}" {% if filter_vendor == vendor.id|string %}selected{% endif %}>
-                                {{ vendor.name }}
-                            </option>
+                            <option value="{{ vendor.id }}" {% if filter_vendor == vendor.id|string %}selected{% endif %}>{{ vendor.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
-
-                    <!-- Source -->
                     <div class="col-md-2">
                         <label class="form-label fw-bold small">Source</label>
                         <select name="source_id" class="form-control form-control-sm">
                             <option value="">All Sources</option>
                             {% for source in sources %}
-                            <option value="{{ source.id }}" {% if filter_source == source.id|string %}selected{% endif %}>
-                                {{ source.name }}
-                            </option>
+                            <option value="{{ source.id }}" {% if filter_source == source.id|string %}selected{% endif %}>{{ source.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
                 </div>
-
-                <!-- Search + Button -->
                 <div class="row g-2 mt-1 align-items-end">
                     <div class="col-md-4">
                         <label class="form-label fw-bold small">Search Description / Notes</label>
@@ -126,10 +104,15 @@
             </thead>
             <tbody>
                 {% for expense in expenses %}
-                <tr>
+                <tr {% if expense.is_split == 2 %}class="table-info"{% endif %}>
                     <td>{{ expense.date }}</td>
                     <td>{{ expense.source_name or '-' }}</td>
-                    <td>{{ expense.description or '-' }}</td>
+                    <td>
+                        {{ expense.description or '-' }}
+                        {% if expense.is_split == 2 %}
+                            <span class="badge bg-info text-dark ms-1" title="Split transaction">🔀 split</span>
+                        {% endif %}
+                    </td>
                     <td>
                         {% if expense.category_name %}
                         <span class="badge" style="background-color: {{ expense.category_color or '#6c757d' }}">
@@ -143,6 +126,8 @@
                     <td>
                         <a href="{{ url_for('edit_expense', expense_id=expense.id) }}"
                            class="btn btn-primary btn-sm">Edit</a>
+                        <a href="{{ url_for('split_transaction', expense_id=expense.id) }}"
+                           class="btn btn-info btn-sm text-white">🔀 Split</a>
                         <form method="POST" action="{{ url_for('delete_expense', expense_id=expense.id) }}"
                               style="display:inline;"
                               onsubmit="return confirm('Delete this expense?')">
@@ -165,34 +150,28 @@
 </div>
 
 <script>
-// Dynamically filter subcategory dropdown based on selected category
 document.getElementById('filter_category').addEventListener('change', function() {
     const categoryId = this.value;
     const subSelect = document.getElementById('filter_subcategory');
     const options = subSelect.querySelectorAll('option[data-category]');
-
     options.forEach(opt => {
         if (!categoryId || opt.getAttribute('data-category') === categoryId) {
             opt.style.display = 'block';
         } else {
             opt.style.display = 'none';
-            if (opt.selected) {
-                subSelect.value = '';
-            }
+            if (opt.selected) subSelect.value = '';
         }
     });
 });
 
-// On page load, hide subcategories that don't match current category filter
 (function() {
     const categoryId = document.getElementById('filter_category').value;
     if (categoryId) {
-        const subSelect = document.getElementById('filter_subcategory');
-        subSelect.querySelectorAll('option[data-category]').forEach(opt => {
-            if (opt.getAttribute('data-category') !== categoryId) {
-                opt.style.display = 'none';
-            }
-        });
+        document.getElementById('filter_subcategory')
+            .querySelectorAll('option[data-category]')
+            .forEach(opt => {
+                if (opt.getAttribute('data-category') !== categoryId) opt.style.display = 'none';
+            });
     }
 })();
 </script>

@@ -52,7 +52,7 @@
             <table class="table table-hover mb-0">
                 <thead class="table-dark">
                     <tr>
-                        <th style="width:30%">Category</th>
+                        <th style="width:32%">Category</th>
                         <th class="text-end">Budget</th>
                         <th class="text-end">Actual</th>
                         <th class="text-end">Variance</th>
@@ -62,7 +62,7 @@
                 </thead>
                 <tbody>
 
-                    <!-- ===== INCOME SECTION ===== -->
+                    <!-- ===== INCOME ===== -->
                     <tr class="table-success">
                         <td colspan="6" class="fw-bold fs-6">💵 INCOME</td>
                     </tr>
@@ -71,27 +71,22 @@
                     {% set budget_var = row.actual - row.budget if row.budget > 0 else 0 %}
                     {% set yoy = row.actual - row.ly_amount %}
                     {% set yoy_pct = (yoy / row.ly_amount * 100) if row.ly_amount > 0 else 0 %}
-                    <tr>
+                    <tr class="clickable-row"
+                        onclick="showDetail('{{ row.category_id }}', null, '{{ row.category_name }}', 'income')"
+                        style="cursor:pointer;"
+                        title="Click to see transactions">
                         <td class="ps-4">
                             <span class="badge me-1" style="background-color: {{ row.color or '#28a745' }}">{{ row.category_name }}</span>
+                            <small class="text-muted">▶</small>
                         </td>
-                        <td class="text-end text-muted">
-                            {% if row.budget > 0 %}${{ "%.2f"|format(row.budget) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end text-muted">{% if row.budget > 0 %}${{ "%.2f"|format(row.budget) }}{% else %}—{% endif %}</td>
                         <td class="text-end fw-bold text-success">${{ "%.2f"|format(row.actual) }}</td>
                         <td class="text-end fw-bold {% if budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if row.budget > 0 %}
-                                {% if budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(budget_var) }}
-                            {% else %}—{% endif %}
+                            {% if row.budget > 0 %}{% if budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end text-muted">
-                            {% if row.ly_amount > 0 %}${{ "%.2f"|format(row.ly_amount) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end text-muted">{% if row.ly_amount > 0 %}${{ "%.2f"|format(row.ly_amount) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if yoy >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if row.ly_amount > 0 %}
-                                {% if yoy >= 0 %}+{% endif %}${{ "%.2f"|format(yoy) }}
-                                ({{ "%.0f"|format(yoy_pct) }}%)
-                            {% else %}—{% endif %}
+                            {% if row.ly_amount > 0 %}{% if yoy >= 0 %}+{% endif %}${{ "%.2f"|format(yoy) }} ({{ "%.0f"|format(yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
                     {% endfor %}
@@ -99,36 +94,26 @@
                     <tr><td colspan="6" class="text-muted text-center ps-4 py-2">No income recorded for this period</td></tr>
                     {% endif %}
 
-                    <!-- Income Total Row -->
+                    <!-- Income Total -->
                     {% set income_budget_var = total_income - total_income_budget if total_income_budget > 0 else 0 %}
                     {% set income_yoy = total_income - ly_total_income %}
                     {% set income_yoy_pct = (income_yoy / ly_total_income * 100) if ly_total_income > 0 else 0 %}
                     <tr class="table-success fw-bold border-top border-success">
                         <td>Total Income</td>
-                        <td class="text-end">
-                            {% if total_income_budget > 0 %}${{ "%.2f"|format(total_income_budget) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end">{% if total_income_budget > 0 %}${{ "%.2f"|format(total_income_budget) }}{% else %}—{% endif %}</td>
                         <td class="text-end text-success fs-6">${{ "%.2f"|format(total_income) }}</td>
                         <td class="text-end {% if income_budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if total_income_budget > 0 %}
-                                {% if income_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(income_budget_var) }}
-                            {% else %}—{% endif %}
+                            {% if total_income_budget > 0 %}{% if income_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(income_budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end">
-                            {% if ly_total_income > 0 %}${{ "%.2f"|format(ly_total_income) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end">{% if ly_total_income > 0 %}${{ "%.2f"|format(ly_total_income) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if income_yoy >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if ly_total_income > 0 %}
-                                {% if income_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(income_yoy) }}
-                                ({{ "%.0f"|format(income_yoy_pct) }}%)
-                            {% else %}—{% endif %}
+                            {% if ly_total_income > 0 %}{% if income_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(income_yoy) }} ({{ "%.0f"|format(income_yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
 
-                    <!-- Spacer -->
-                    <tr><td colspan="6" style="padding: 4px;"></td></tr>
+                    <tr><td colspan="6" style="padding:4px;"></td></tr>
 
-                    <!-- ===== EXPENSES SECTION ===== -->
+                    <!-- ===== EXPENSES ===== -->
                     <tr class="table-danger">
                         <td colspan="6" class="fw-bold fs-6">💸 EXPENSES</td>
                     </tr>
@@ -137,76 +122,69 @@
                     {% set budget_var = row.budget - row.actual if row.budget > 0 else 0 %}
                     {% set yoy = row.actual - row.ly_amount %}
                     {% set yoy_pct = (yoy / row.ly_amount * 100) if row.ly_amount > 0 else 0 %}
-                    <tr>
-                        <td class="ps-4">
+                    <!-- Category Row - clickable -->
+                    <tr class="clickable-row"
+                        onclick="showDetail('{{ row.category_id }}', null, '{{ row.category_name }}', 'expense')"
+                        style="cursor:pointer;"
+                        title="Click to see all transactions">
+                        <td class="ps-4 fw-bold">
                             <span class="badge me-1" style="background-color: {{ row.color or '#6c757d' }}">{{ row.category_name }}</span>
-                            {% if row.subcategories %}
-                            <br>
-                            {% for sub in row.subcategories %}
-                            <small class="text-muted ms-3">↳ {{ sub.name }}: ${{ "%.2f"|format(sub.actual) }}
-                                {% if sub.budget > 0 %}
-                                    <span class="{% if sub.budget - sub.actual >= 0 %}text-success{% else %}text-danger{% endif %}">
-                                        ({% if sub.budget - sub.actual >= 0 %}+{% endif %}${{ "%.2f"|format(sub.budget - sub.actual) }})
-                                    </span>
-                                {% endif %}
-                            </small><br>
-                            {% endfor %}
-                            {% endif %}
+                            <small class="text-muted">▶</small>
                         </td>
-                        <td class="text-end text-muted">
-                            {% if row.budget > 0 %}${{ "%.2f"|format(row.budget) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end text-muted">{% if row.budget > 0 %}${{ "%.2f"|format(row.budget) }}{% else %}—{% endif %}</td>
                         <td class="text-end fw-bold text-danger">${{ "%.2f"|format(row.actual) }}</td>
                         <td class="text-end fw-bold {% if budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if row.budget > 0 %}
-                                {% if budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(budget_var) }}
-                            {% else %}—{% endif %}
+                            {% if row.budget > 0 %}{% if budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end text-muted">
-                            {% if row.ly_amount > 0 %}${{ "%.2f"|format(row.ly_amount) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end text-muted">{% if row.ly_amount > 0 %}${{ "%.2f"|format(row.ly_amount) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if yoy <= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if row.ly_amount > 0 %}
-                                {% if yoy >= 0 %}+{% endif %}${{ "%.2f"|format(yoy) }}
-                                ({{ "%.0f"|format(yoy_pct) }}%)
-                            {% else %}—{% endif %}
+                            {% if row.ly_amount > 0 %}{% if yoy >= 0 %}+{% endif %}${{ "%.2f"|format(yoy) }} ({{ "%.0f"|format(yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
+                    <!-- Subcategory Rows - each also clickable -->
+                    {% for sub in row.subcategories %}
+                    {% set sub_var = sub.budget - sub.actual if sub.budget > 0 else 0 %}
+                    <tr class="clickable-row"
+                        onclick="showDetail('{{ row.category_id }}', '{{ sub.subcategory_id }}', '{{ row.category_name }} → {{ sub.name }}', 'expense')"
+                        style="cursor:pointer; background-color: #fafafa;"
+                        title="Click to see subcategory transactions">
+                        <td class="ps-5 text-muted small">
+                            ↳ {{ sub.name }} <small>▶</small>
+                        </td>
+                        <td class="text-end text-muted small">{% if sub.budget > 0 %}${{ "%.2f"|format(sub.budget) }}{% else %}—{% endif %}</td>
+                        <td class="text-end small">${{ "%.2f"|format(sub.actual) }}</td>
+                        <td class="text-end small {% if sub_var >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            {% if sub.budget > 0 %}{% if sub_var >= 0 %}+{% endif %}${{ "%.2f"|format(sub_var) }}{% else %}—{% endif %}
+                        </td>
+                        <td class="text-end text-muted small">—</td>
+                        <td class="text-end small text-muted">—</td>
+                    </tr>
+                    {% endfor %}
                     {% endfor %}
                     {% if not expenses_by_category %}
                     <tr><td colspan="6" class="text-muted text-center ps-4 py-2">No expenses recorded for this period</td></tr>
                     {% endif %}
 
-                    <!-- Expenses Total Row -->
+                    <!-- Expenses Total -->
                     {% set exp_budget_var = total_expenses_budget - total_expenses if total_expenses_budget > 0 else 0 %}
                     {% set exp_yoy = total_expenses - ly_total_expenses %}
                     {% set exp_yoy_pct = (exp_yoy / ly_total_expenses * 100) if ly_total_expenses > 0 else 0 %}
                     <tr class="table-danger fw-bold border-top border-danger">
                         <td>Total Expenses</td>
-                        <td class="text-end">
-                            {% if total_expenses_budget > 0 %}${{ "%.2f"|format(total_expenses_budget) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end">{% if total_expenses_budget > 0 %}${{ "%.2f"|format(total_expenses_budget) }}{% else %}—{% endif %}</td>
                         <td class="text-end text-danger fs-6">${{ "%.2f"|format(total_expenses) }}</td>
                         <td class="text-end {% if exp_budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if total_expenses_budget > 0 %}
-                                {% if exp_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(exp_budget_var) }}
-                            {% else %}—{% endif %}
+                            {% if total_expenses_budget > 0 %}{% if exp_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(exp_budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end">
-                            {% if ly_total_expenses > 0 %}${{ "%.2f"|format(ly_total_expenses) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end">{% if ly_total_expenses > 0 %}${{ "%.2f"|format(ly_total_expenses) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if exp_yoy <= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if ly_total_expenses > 0 %}
-                                {% if exp_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(exp_yoy) }}
-                                ({{ "%.0f"|format(exp_yoy_pct) }}%)
-                            {% else %}—{% endif %}
+                            {% if ly_total_expenses > 0 %}{% if exp_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(exp_yoy) }} ({{ "%.0f"|format(exp_yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
 
-                    <!-- Spacer -->
-                    <tr><td colspan="6" style="padding: 4px;"></td></tr>
+                    <tr><td colspan="6" style="padding:4px;"></td></tr>
 
-                    <!-- ===== NET INCOME ROW ===== -->
+                    <!-- ===== NET ROW ===== -->
                     {% set net_budget = total_income_budget - total_expenses_budget %}
                     {% set net_budget_var = net - net_budget if (total_income_budget > 0 or total_expenses_budget > 0) else 0 %}
                     {% set ly_net = ly_total_income - ly_total_expenses %}
@@ -215,26 +193,15 @@
                     <tr class="{% if net >= 0 %}table-success{% else %}table-danger{% endif %} fw-bold fs-5 border-top border-2">
                         <td>NET {{ 'SURPLUS' if net >= 0 else 'DEFICIT' }}</td>
                         <td class="text-end">
-                            {% if total_income_budget > 0 or total_expenses_budget > 0 %}
-                                ${{ "%.2f"|format(net_budget) }}
-                            {% else %}—{% endif %}
+                            {% if total_income_budget > 0 or total_expenses_budget > 0 %}${{ "%.2f"|format(net_budget) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end {% if net >= 0 %}text-success{% else %}text-danger{% endif %} fs-5">
-                            ${{ "%.2f"|format(net) }}
-                        </td>
+                        <td class="text-end {% if net >= 0 %}text-success{% else %}text-danger{% endif %} fs-5">${{ "%.2f"|format(net) }}</td>
                         <td class="text-end {% if net_budget_var >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if total_income_budget > 0 or total_expenses_budget > 0 %}
-                                {% if net_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(net_budget_var) }}
-                            {% else %}—{% endif %}
+                            {% if total_income_budget > 0 or total_expenses_budget > 0 %}{% if net_budget_var >= 0 %}+{% endif %}${{ "%.2f"|format(net_budget_var) }}{% else %}—{% endif %}
                         </td>
-                        <td class="text-end">
-                            {% if ly_net != 0 %}${{ "%.2f"|format(ly_net) }}{% else %}—{% endif %}
-                        </td>
+                        <td class="text-end">{% if ly_net != 0 %}${{ "%.2f"|format(ly_net) }}{% else %}—{% endif %}</td>
                         <td class="text-end {% if net_yoy >= 0 %}text-success{% else %}text-danger{% endif %}">
-                            {% if ly_net != 0 %}
-                                {% if net_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(net_yoy) }}
-                                ({{ "%.0f"|format(net_yoy_pct) }}%)
-                            {% else %}—{% endif %}
+                            {% if ly_net != 0 %}{% if net_yoy >= 0 %}+{% endif %}${{ "%.2f"|format(net_yoy) }} ({{ "%.0f"|format(net_yoy_pct) }}%){% else %}—{% endif %}
                         </td>
                     </tr>
 
@@ -244,12 +211,112 @@
     </div>
 </div>
 
+<!-- ===== TRANSACTION DETAIL MODAL ===== -->
+<div class="modal fade" id="detailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modalTitle">Transactions</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div id="modalLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary"></div>
+                    <p class="mt-2 text-muted">Loading transactions...</p>
+                </div>
+                <div id="modalContent" style="display:none;">
+                    <table class="table table-striped table-sm mb-0">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Date</th>
+                                <th>Description</th>
+                                <th>Vendor</th>
+                                <th>Source</th>
+                                <th>Notes</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modalTableBody"></tbody>
+                        <tfoot>
+                            <tr class="fw-bold table-secondary">
+                                <td colspan="5">Total</td>
+                                <td class="text-end" id="modalTotal"></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
+// Store date range for API calls
+const PNL_START = '{{ start_date }}';
+const PNL_END = '{{ end_date }}';
+
 function toggleInputs(viewType) {
     document.getElementById('input_month').style.display = viewType === 'month' ? '' : 'none';
     document.getElementById('input_year').style.display = viewType === 'year' ? '' : 'none';
     document.getElementById('input_from').style.display = viewType === 'range' ? '' : 'none';
     document.getElementById('input_to').style.display = viewType === 'range' ? '' : 'none';
 }
+
+function showDetail(categoryId, subcategoryId, label, type) {
+    // Show modal
+    const modal = new bootstrap.Modal(document.getElementById('detailModal'));
+    document.getElementById('modalTitle').textContent = label + ' — Transactions';
+    document.getElementById('modalLoading').style.display = 'block';
+    document.getElementById('modalContent').style.display = 'none';
+    modal.show();
+
+    // Build URL
+    let url = `/pnl/detail?category_id=${categoryId}&start_date=${PNL_START}&end_date=${PNL_END}&type=${type}`;
+    if (subcategoryId) url += `&subcategory_id=${subcategoryId}`;
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('modalTableBody');
+            tbody.innerHTML = '';
+
+            if (data.transactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">No transactions found</td></tr>';
+            } else {
+                data.transactions.forEach(t => {
+                    const amtClass = type === 'income' ? 'text-success' : 'text-danger';
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${t.date}</td>
+                            <td>${t.description}</td>
+                            <td>${t.vendor_name || '—'}</td>
+                            <td>${t.source_name}</td>
+                            <td><small class="text-muted">${t.notes}</small></td>
+                            <td class="text-end fw-bold ${amtClass}">$${t.amount.toFixed(2)}</td>
+                        </tr>`;
+                });
+            }
+
+            const totalClass = type === 'income' ? 'text-success' : 'text-danger';
+            document.getElementById('modalTotal').innerHTML = `<span class="${totalClass}">$${data.total.toFixed(2)}</span>`;
+            document.getElementById('modalLoading').style.display = 'none';
+            document.getElementById('modalContent').style.display = 'block';
+        })
+        .catch(() => {
+            document.getElementById('modalTableBody').innerHTML =
+                '<tr><td colspan="6" class="text-center text-danger py-3">Error loading transactions</td></tr>';
+            document.getElementById('modalLoading').style.display = 'none';
+            document.getElementById('modalContent').style.display = 'block';
+        });
+}
+
+// Highlight rows on hover
+document.querySelectorAll('.clickable-row').forEach(row => {
+    row.addEventListener('mouseenter', () => row.style.backgroundColor = '#f0f4ff');
+    row.addEventListener('mouseleave', () => row.style.backgroundColor = '');
+});
 </script>
 {% endblock %}

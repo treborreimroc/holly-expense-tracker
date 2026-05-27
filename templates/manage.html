@@ -86,6 +86,15 @@
                 </div>
             </div>
         </div>
+        <div class="col-md-3 mb-3">
+            <div class="card text-center border-secondary">
+                <div class="card-body">
+                    <h5 class="card-title">🧾 Tax Rates</h5>
+                    <p class="display-4">{{ stats.tax_rates }}</p>
+                    <a href="{{ url_for('manage_tax_rates') }}" class="btn btn-secondary btn-sm">Manage</a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

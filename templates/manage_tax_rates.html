@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Manage Tax Rates{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>🧾 Manage Tax Rates</h2>
+
+    <!-- Add New Rate -->
+    <div class="card mt-4">
+        <div class="card-header fw-bold">Add Custom Tax Rate</div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('add_tax_rate') }}">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label fw-bold small">Name</label>
+                        <input type="text" name="name" class="form-control"
+                               placeholder="e.g. PST - British Columbia (7%)" required>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold small">Rate (%)</label>
+                        <input type="number" name="rate" step="0.01" min="0" max="100"
+                               class="form-control" placeholder="e.g. 7.00" required>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-success w-100">Add Rate</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tax Rates Table -->
+    <div class="card mt-4">
+        <div class="card-header fw-bold">Tax Rates</div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Name</th>
+                        <th class="text-end">Rate</th>
+                        <th class="text-center">Active</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rate in tax_rates %}
+                    <tr {% if not rate.is_active %}class="text-muted"{% endif %}>
+                        <td class="fw-bold">{{ rate.name }}</td>
+                        <td class="text-end">{{ rate.rate }}%</td>
+                        <td class="text-center">
+                            <form method="POST" action="{{ url_for('toggle_tax_rate', rate_id=rate.id) }}" style="display:inline;">
+                                <button type="submit" class="btn btn-sm {% if rate.is_active %}btn-success{% else %}btn-outline-secondary{% endif %}">
+                                    {% if rate.is_active %}✓ Active{% else %}Off{% endif %}
+                                </button>
+                            </form>
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('delete_tax_rate', rate_id=rate.id) }}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Delete this tax rate?')">
+                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="alert alert-info mt-4 small">
+        💡 Toggle rates on/off to control which ones appear in the expense dropdown. Delete removes a rate permanently.
+    </div>
+
+    <div class="mt-3">
+        <a href="{{ url_for('manage') }}" class="btn btn-secondary">Back to Admin</a>
+    </div>
+</div>
+{% endblock %}

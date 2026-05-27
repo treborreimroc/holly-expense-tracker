@@ -75,6 +75,13 @@ def add_expense():
         vendor_id = request.form.get('vendor_id') or None
         notes = request.form.get('notes', '')
 
+        # Handle tax
+        tax_rate_id = request.form.get('tax_rate_id') or None
+        subtotal    = request.form.get('subtotal') or None
+        tax_amount  = request.form.get('tax_amount') or None
+        if subtotal: subtotal = float(subtotal)
+        if tax_amount: tax_amount = float(tax_amount)
+
         # Handle receipt upload
         receipt_data = None
         receipt_mime = None
@@ -89,10 +96,12 @@ def add_expense():
         cursor.execute("""
             INSERT INTO expenses (date, source_id, description, category_id,
                                 subcategory_id, vendor_id, amount, notes,
+                                tax_rate_id, subtotal, tax_amount,
                                 receipt_data, receipt_mime_type, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
         """, (date_val, source_id, description, category_id, subcategory_id,
-                vendor_id, amount, notes, receipt_data, receipt_mime))
+                vendor_id, amount, notes, tax_rate_id, subtotal, tax_amount,
+                receipt_data, receipt_mime))
         conn.commit(); cursor.close(); conn.close()
         return redirect(url_for('view_expenses'))
 
@@ -102,9 +111,11 @@ def add_expense():
     cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
     cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
     cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
+    cursor.execute('SELECT * FROM tax_rates WHERE is_active = 1 ORDER BY display_order, name'); tax_rates = cursor.fetchall()
     cursor.close(); conn.close()
     return render_template('add_expense.html', sources=sources, categories=categories,
                          subcategories=subcategories, vendors=vendors,
+                         tax_rates=tax_rates,
                          today=datetime.now().strftime('%Y-%m-%d'))
 
 @app.route('/view-expenses')
@@ -480,10 +491,11 @@ def manage():
     cursor.execute('SELECT COUNT(*) as count FROM income'); income_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM income_categories'); income_cat_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM users'); users_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM tax_rates WHERE is_active = 1'); tax_rates_count = cursor.fetchone()['count']
     cursor.close(); conn.close()
     stats = {'sources': sources_count, 'categories': categories_count, 'vendors': vendors_count,
              'expenses': expenses_count, 'income': income_count, 'income_categories': income_cat_count,
-             'users': users_count}
+             'users': users_count, 'tax_rates': tax_rates_count}
     return render_template('manage.html', stats=stats)
 
 @app.route('/manage/sources')
@@ -1635,6 +1647,48 @@ def pnl_report_pdf():
     elements.append(t)
     doc.build(elements)
     return make_pdf_response(buffer, f'pnl_{period}.pdf')
+
+
+# ============= TAX RATES =============
+@app.route('/manage/tax-rates')
+@login_required
+def manage_tax_rates():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM tax_rates ORDER BY display_order, name')
+    tax_rates = cursor.fetchall()
+    cursor.close(); conn.close()
+    return render_template('manage_tax_rates.html', tax_rates=tax_rates)
+
+@app.route('/manage/tax-rates/add', methods=['POST'])
+@login_required
+def add_tax_rate():
+    name = request.form['name'].strip()
+    rate = float(request.form['rate'])
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('INSERT INTO tax_rates (name, rate, display_order, is_active) VALUES (%s, %s, 99, 1)',
+                  (name, rate))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('manage_tax_rates'))
+
+@app.route('/manage/tax-rates/toggle/<int:rate_id>', methods=['POST'])
+@login_required
+def toggle_tax_rate(rate_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE tax_rates SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END WHERE id = %s', (rate_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('manage_tax_rates'))
+
+@app.route('/manage/tax-rates/delete/<int:rate_id>', methods=['POST'])
+@login_required
+def delete_tax_rate(rate_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM tax_rates WHERE id = %s', (rate_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('manage_tax_rates'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

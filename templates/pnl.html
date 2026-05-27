@@ -223,6 +223,41 @@
             </table>
         </div>
     </div>
+
+    <!-- ===== TAX SUMMARY ===== -->
+    {% if tax_summary %}
+    <div class="card mt-4 border-warning">
+        <div class="card-header bg-warning text-dark fw-bold">
+            🧾 Tax Summary — {{ period_label }}
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Tax Rate</th>
+                        <th class="text-end">Rate</th>
+                        <th class="text-end">Total Tax Paid</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in tax_summary %}
+                    <tr>
+                        <td>{{ row.rate_name }}</td>
+                        <td class="text-end">{{ row.rate }}%</td>
+                        <td class="text-end fw-bold">${{ "%.2f"|format(row.total_tax) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-warning fw-bold">
+                    <tr>
+                        <td colspan="2">Total Tax Paid</td>
+                        <td class="text-end">${{ "%.2f"|format(total_tax_paid) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- ===== TRANSACTION DETAIL MODAL ===== -->

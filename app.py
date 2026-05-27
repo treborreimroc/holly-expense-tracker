@@ -873,10 +873,30 @@ def pnl():
     """)
     years = [r['yr'] for r in cursor.fetchall()] or [datetime.now().year]
 
+    # Tax summary — group by tax rate name
+    tax_summary = []
+    try:
+        cursor.execute(f"""
+            SELECT tr.name as rate_name, tr.rate, SUM(e.tax_amount) as total_tax
+            FROM expenses e
+            JOIN tax_rates tr ON e.tax_rate_id = tr.id
+            WHERE e.archived = 0 AND e.date >= %s AND e.date{date_op if "date_op" in dir() else "<"} %s
+            AND e.tax_amount IS NOT NULL AND e.tax_amount > 0
+            GROUP BY tr.name, tr.rate
+            ORDER BY tr.rate DESC
+        """, (start_date, end_date))
+        tax_summary = cursor.fetchall()
+    except Exception:
+        pass  # tax columns may not exist yet
+
+    total_tax_paid = sum(float(r['total_tax']) for r in tax_summary)
+
     cursor.close()
     conn.close()
 
     return render_template('pnl.html',
+                         tax_summary=tax_summary,
+                         total_tax_paid=total_tax_paid,
                          view_type=view_type,
                          selected_month=selected_month,
                          selected_year=selected_year,
@@ -1586,6 +1606,22 @@ def pnl_report_pdf():
 
     net = total_income - total_expenses
 
+    # Tax summary
+    tax_rows_pdf = []
+    try:
+        cursor.execute(f"""
+            SELECT tr.name as rate_name, SUM(e.tax_amount) as total_tax
+            FROM expenses e
+            JOIN tax_rates tr ON e.tax_rate_id = tr.id
+            WHERE e.archived=0 AND e.date>=%s AND e.date{date_op}%s
+            AND e.tax_amount IS NOT NULL AND e.tax_amount > 0
+            GROUP BY tr.name, tr.rate ORDER BY tr.rate DESC
+        """, (start_date, end_date))
+        tax_rows_pdf = cursor.fetchall()
+    except Exception:
+        pass
+    total_tax_pdf = sum(float(r['total_tax']) for r in tax_rows_pdf)
+
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                             leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
@@ -1604,6 +1640,14 @@ def pnl_report_pdf():
     data.append(['Total Expenses', f"${total_expenses:.2f}"])
     data.append(['', ''])
     data.append(['NET ' + ('SURPLUS' if net >= 0 else 'DEFICIT'), f"${abs(net):.2f}"])
+
+    # Tax summary section
+    if tax_rows_pdf:
+        data.append(['', ''])
+        data.append(['TAX SUMMARY', ''])
+        for r in tax_rows_pdf:
+            data.append([r['rate_name'], f"${float(r['total_tax']):.2f}"])
+        data.append(['Total Tax Paid', f"${total_tax_pdf:.2f}"])
 
     col_widths = [360, 120]
     t = Table(data, colWidths=col_widths)

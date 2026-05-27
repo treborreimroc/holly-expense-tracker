@@ -1,0 +1,522 @@
+{% extends "base.html" %}
+{% block title %}CSV Import{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>📥 Import Bank CSV</h2>
+
+    <!-- Step 1: Upload & Template -->
+    <div class="card mb-4" id="step1">
+        <div class="card-header fw-bold">Step 1 — Upload CSV File</div>
+        <div class="card-body">
+            <form id="uploadForm" enctype="multipart/form-data">
+
+                <!-- Saved Templates -->
+                {% if templates %}
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Use a Saved Template</label>
+                    <div class="d-flex gap-2">
+                        <select id="templateSelect" class="form-control">
+                            <option value="">— No template, map manually —</option>
+                            {% for t in templates %}
+                            <option value="{{ t.id }}"
+                                data-config="{{ t.config_json }}">
+                                {{ t.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <button type="button" class="btn btn-outline-danger btn-sm"
+                                id="deleteTemplateBtn" style="display:none;"
+                                onclick="deleteTemplate()">Delete</button>
+                    </div>
+                </div>
+                <hr>
+                {% endif %}
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">CSV File</label>
+                    <input type="file" name="csv_file" id="csvFile" class="form-control"
+                           accept=".csv" required>
+                </div>
+
+                <div class="form-check mb-3">
+                    <input type="checkbox" class="form-check-input" id="hasHeaders" checked>
+                    <label class="form-check-label" for="hasHeaders">
+                        First row is a header row (uncheck for CIBC)
+                    </label>
+                </div>
+
+                <button type="button" class="btn btn-primary" onclick="uploadCSV()">
+                    Upload & Preview →
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Step 2: Map Columns -->
+    <div class="card mb-4" id="step2" style="display:none;">
+        <div class="card-header fw-bold">Step 2 — Map Columns & Settings</div>
+        <div class="card-body">
+            <!-- Preview Table -->
+            <div class="mb-4">
+                <label class="form-label fw-bold small text-muted">Preview (first 5 rows)</label>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered" id="previewTable"></table>
+                </div>
+            </div>
+
+            <div class="row">
+                <!-- Column Mapping -->
+                <div class="col-md-6">
+                    <h6 class="fw-bold">Column Mapping</h6>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Date Column <span class="text-danger">*</span></label>
+                        <select id="mapDate" class="form-control form-control-sm"></select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Description Column <span class="text-danger">*</span></label>
+                        <select id="mapDescription" class="form-control form-control-sm"></select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Amount Column</label>
+                        <select id="mapAmount" class="form-control form-control-sm">
+                            <option value="">— Not used —</option>
+                        </select>
+                        <small class="text-muted">Use for Royal Bank (single +/- column)</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Debit/Expense Column</label>
+                        <select id="mapDebit" class="form-control form-control-sm">
+                            <option value="">— Not used —</option>
+                        </select>
+                        <small class="text-muted">Use for CIBC (separate debit column)</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Credit/Income Column</label>
+                        <select id="mapCredit" class="form-control form-control-sm">
+                            <option value="">— Not used —</option>
+                        </select>
+                        <small class="text-muted">Use for CIBC (separate credit column)</small>
+                    </div>
+                </div>
+
+                <!-- Import Settings -->
+                <div class="col-md-6">
+                    <h6 class="fw-bold">Import Settings</h6>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Default Source/Account <span class="text-danger">*</span></label>
+                        <select id="defaultSource" class="form-control form-control-sm">
+                            <option value="">Select source...</option>
+                            {% for source in sources %}
+                            <option value="{{ source.id }}">{{ source.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label small fw-bold">Default Expense Category</label>
+                        <select id="defaultCategory" class="form-control form-control-sm">
+                            <option value="">None (assign later)</option>
+                            {% for cat in categories %}
+                            <option value="{{ cat.id }}">{{ cat.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label small fw-bold">Negative amounts are</label>
+                        <select id="negativeIs" class="form-control form-control-sm">
+                            <option value="expense">Expenses (most banks)</option>
+                            <option value="income">Income</option>
+                        </select>
+                    </div>
+
+                    <!-- Save Template -->
+                    <div class="card border-secondary p-3">
+                        <div class="form-check mb-2">
+                            <input type="checkbox" class="form-check-input" id="saveTemplate">
+                            <label class="form-check-label fw-bold" for="saveTemplate">
+                                Save as template
+                            </label>
+                        </div>
+                        <input type="text" id="templateName" class="form-control form-control-sm"
+                               placeholder="e.g. CIBC Chequing, Royal Bank Visa..."
+                               style="display:none;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-4">
+                <button type="button" class="btn btn-success btn-lg" onclick="previewImport()">
+                    Preview Import →
+                </button>
+                <button type="button" class="btn btn-secondary ms-2" onclick="resetImport()">
+                    ← Start Over
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 3: Review & Import -->
+    <div class="card mb-4" id="step3" style="display:none;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <strong>Step 3 — Review & Import</strong>
+            <span id="importSummary" class="badge bg-info fs-6"></span>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info small">
+                💡 Review the rows below. Uncheck any you don't want to import.
+                Rows marked <span class="badge bg-success">Income</span> go to your Income table,
+                <span class="badge bg-danger">Expense</span> go to Expenses.
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-sm table-hover" id="reviewTable">
+                    <thead class="table-dark">
+                        <tr>
+                            <th><input type="checkbox" id="selectAll" checked
+                                       onchange="toggleAll(this)"></th>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Type</th>
+                            <th class="text-end">Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reviewBody"></tbody>
+                </table>
+            </div>
+
+            <div class="d-flex gap-2 mt-3">
+                <button type="button" class="btn btn-primary btn-lg" onclick="doImport()">
+                    ✅ Import Selected Rows
+                </button>
+                <button type="button" class="btn btn-secondary" onclick="goToStep2()">
+                    ← Back to Mapping
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Step 4: Results -->
+    <div class="card mb-4" id="step4" style="display:none;">
+        <div class="card-header bg-success text-white fw-bold">✅ Import Complete</div>
+        <div class="card-body" id="importResults"></div>
+    </div>
+</div>
+
+<script>
+let csvData = [];
+let columns = [];
+let hasHeaders = true;
+let parsedRows = [];
+
+// ---- Upload CSV ----
+function uploadCSV() {
+    const file = document.getElementById('csvFile').files[0];
+    if (!file) { alert('Please select a CSV file'); return; }
+    hasHeaders = document.getElementById('hasHeaders').checked;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const text = e.target.result;
+        parseCSV(text);
+        showStep2();
+    };
+    reader.readAsText(file);
+}
+
+function parseCSV(text) {
+    const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
+    csvData = lines.map(line => {
+        // Handle quoted fields
+        const result = [];
+        let field = '';
+        let inQuotes = false;
+        for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (ch === '"') { inQuotes = !inQuotes; }
+            else if (ch === ',' && !inQuotes) { result.push(field.trim()); field = ''; }
+            else { field += ch; }
+        }
+        result.push(field.trim());
+        return result;
+    });
+
+    if (hasHeaders && csvData.length > 0) {
+        columns = csvData[0].map((h, i) => ({index: i, label: h || `Column ${i+1}`}));
+        csvData = csvData.slice(1);
+    } else {
+        columns = csvData[0] ? csvData[0].map((_, i) => ({index: i, label: `Column ${i+1}`})) : [];
+    }
+}
+
+function showStep2() {
+    // Build preview table
+    const table = document.getElementById('previewTable');
+    let html = '<thead class="table-secondary"><tr>' +
+        columns.map(c => `<th class="small">${c.label}</th>`).join('') + '</tr></thead><tbody>';
+    csvData.slice(0, 5).forEach(row => {
+        html += '<tr>' + row.map((cell, i) =>
+            `<td class="small">${cell || ''}</td>`
+        ).join('') + '</tr>';
+    });
+    html += '</tbody>';
+    table.innerHTML = html;
+
+    // Build column dropdowns
+    const colOptions = '<option value="">— Skip —</option>' +
+        columns.map(c => `<option value="${c.index}">${c.label}</option>`).join('');
+    const colOptionsNone = '<option value="">— Not used —</option>' +
+        columns.map(c => `<option value="${c.index}">${c.label}</option>`).join('');
+
+    ['mapDate', 'mapDescription'].forEach(id => {
+        document.getElementById(id).innerHTML = colOptions;
+    });
+    ['mapAmount', 'mapDebit', 'mapCredit'].forEach(id => {
+        document.getElementById(id).innerHTML = colOptionsNone;
+    });
+
+    // Auto-detect common patterns
+    columns.forEach(c => {
+        const l = c.label.toLowerCase();
+        if (l.includes('date') || l.includes('trans')) {
+            trySelect('mapDate', c.index);
+        } else if (l.includes('desc') || l.includes('narr') || l.includes('detail')) {
+            trySelect('mapDescription', c.index);
+        } else if (l.includes('debit') || l.includes('withdrawal') || l.includes('charge')) {
+            trySelect('mapDebit', c.index);
+        } else if (l.includes('credit') || l.includes('deposit')) {
+            trySelect('mapCredit', c.index);
+        } else if (l.includes('amount') || l.includes('cad$') || l.includes('cad ')) {
+            trySelect('mapAmount', c.index);
+        }
+    });
+
+    // Apply saved template if selected
+    const templateSelect = document.getElementById('templateSelect');
+    if (templateSelect && templateSelect.value) {
+        applyTemplate(templateSelect.value);
+    }
+
+    document.getElementById('step1').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+    document.getElementById('saveTemplate').onchange = function() {
+        document.getElementById('templateName').style.display = this.checked ? 'block' : 'none';
+    };
+}
+
+function trySelect(id, val) {
+    const sel = document.getElementById(id);
+    for (let opt of sel.options) {
+        if (opt.value == val) { sel.value = val; break; }
+    }
+}
+
+// ---- Template handling ----
+document.addEventListener('DOMContentLoaded', function() {
+    const ts = document.getElementById('templateSelect');
+    if (ts) {
+        ts.addEventListener('change', function() {
+            document.getElementById('deleteTemplateBtn').style.display =
+                this.value ? 'inline-block' : 'none';
+        });
+    }
+});
+
+function applyTemplate(templateId) {
+    const sel = document.getElementById('templateSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.dataset.config) return;
+    try {
+        const config = JSON.parse(opt.dataset.config);
+        if (config.has_headers !== undefined) {
+            document.getElementById('hasHeaders').checked = config.has_headers;
+            hasHeaders = config.has_headers;
+        }
+        ['mapDate','mapDescription','mapAmount','mapDebit','mapCredit'].forEach(id => {
+            const key = id.replace('map','').toLowerCase();
+            if (config[key] !== undefined) trySelect(id, config[key]);
+        });
+        if (config.source_id) trySelect('defaultSource', config.source_id);
+        if (config.category_id) trySelect('defaultCategory', config.category_id);
+        if (config.negative_is) document.getElementById('negativeIs').value = config.negative_is;
+    } catch(e) { console.error('Template parse error', e); }
+}
+
+function deleteTemplate() {
+    const templateId = document.getElementById('templateSelect').value;
+    if (!templateId || !confirm('Delete this template?')) return;
+    fetch(`/csv-import/template/delete/${templateId}`, {method: 'POST'})
+    .then(r => r.json())
+    .then(d => { if (d.success) location.reload(); });
+}
+
+// ---- Preview Import ----
+function previewImport() {
+    const mapDate = document.getElementById('mapDate').value;
+    const mapDesc = document.getElementById('mapDescription').value;
+    const mapAmount = document.getElementById('mapAmount').value;
+    const mapDebit = document.getElementById('mapDebit').value;
+    const mapCredit = document.getElementById('mapCredit').value;
+    const negativeIs = document.getElementById('negativeIs').value;
+
+    if (!mapDate) { alert('Please select a Date column'); return; }
+    if (!mapDesc) { alert('Please select a Description column'); return; }
+    if (!mapAmount && !mapDebit && !mapCredit) {
+        alert('Please select at least one amount column'); return;
+    }
+
+    parsedRows = [];
+    csvData.forEach((row, idx) => {
+        const date = (row[mapDate] || '').trim();
+        const description = (row[mapDesc] || '').trim();
+        if (!date || !description) return;
+
+        let amount = 0;
+        let type = 'expense';
+
+        if (mapAmount) {
+            // Single amount column (Royal Bank style)
+            const raw = parseFloat((row[mapAmount] || '0').replace(/[$,\s]/g, '')) || 0;
+            if (raw === 0) return;
+            if (raw < 0) {
+                amount = Math.abs(raw);
+                type = negativeIs === 'expense' ? 'expense' : 'income';
+            } else {
+                amount = raw;
+                type = negativeIs === 'expense' ? 'income' : 'expense';
+            }
+        } else {
+            // Separate debit/credit columns (CIBC style)
+            const debit  = parseFloat((mapDebit  ? row[mapDebit]  || '0' : '0').replace(/[$,\s]/g, '')) || 0;
+            const credit = parseFloat((mapCredit ? row[mapCredit] || '0' : '0').replace(/[$,\s]/g, '')) || 0;
+            if (debit > 0) { amount = debit; type = 'expense'; }
+            else if (credit > 0) { amount = credit; type = 'income'; }
+            else return;
+        }
+
+        parsedRows.push({date, description, amount, type, selected: true, rowIdx: idx});
+    });
+
+    buildReviewTable();
+
+    // Save template if requested
+    const saveTemplate = document.getElementById('saveTemplate').checked;
+    const templateName = document.getElementById('templateName').value.trim();
+    if (saveTemplate && templateName) {
+        saveTemplateConfig(templateName);
+    }
+
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'block';
+
+    const expenses = parsedRows.filter(r => r.type === 'expense').length;
+    const income   = parsedRows.filter(r => r.type === 'income').length;
+    document.getElementById('importSummary').textContent =
+        `${parsedRows.length} rows: ${expenses} expenses, ${income} income`;
+}
+
+function buildReviewTable() {
+    const tbody = document.getElementById('reviewBody');
+    tbody.innerHTML = '';
+    parsedRows.forEach((row, i) => {
+        const typeClass = row.type === 'income' ? 'bg-success' : 'bg-danger';
+        tbody.innerHTML += `
+            <tr>
+                <td><input type="checkbox" class="row-check" data-idx="${i}" ${row.selected ? 'checked' : ''}
+                           onchange="parsedRows[${i}].selected = this.checked"></td>
+                <td class="small">${row.date}</td>
+                <td class="small">${row.description}</td>
+                <td><span class="badge ${typeClass}">${row.type}</span></td>
+                <td class="text-end fw-bold small">$${row.amount.toFixed(2)}</td>
+            </tr>`;
+    });
+}
+
+function toggleAll(cb) {
+    document.querySelectorAll('.row-check').forEach((check, i) => {
+        check.checked = cb.checked;
+        parsedRows[i].selected = cb.checked;
+    });
+}
+
+// ---- Do Import ----
+function doImport() {
+    const selected = parsedRows.filter(r => r.selected);
+    if (selected.length === 0) { alert('No rows selected'); return; }
+
+    const sourceId = document.getElementById('defaultSource').value;
+    const categoryId = document.getElementById('defaultCategory').value;
+    if (!sourceId) { alert('Please select a default source/account'); return; }
+
+    fetch('/csv-import/process', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            rows: selected,
+            source_id: sourceId,
+            category_id: categoryId || null
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        document.getElementById('step3').style.display = 'none';
+        document.getElementById('step4').style.display = 'block';
+        document.getElementById('importResults').innerHTML = `
+            <div class="row text-center">
+                <div class="col-md-3">
+                    <h3 class="text-success">${data.expenses_imported}</h3>
+                    <p>Expenses imported</p>
+                </div>
+                <div class="col-md-3">
+                    <h3 class="text-success">${data.income_imported}</h3>
+                    <p>Income imported</p>
+                </div>
+                <div class="col-md-3">
+                    <h3 class="text-danger">${data.errors}</h3>
+                    <p>Errors</p>
+                </div>
+            </div>
+            <div class="d-flex gap-2 mt-3">
+                <a href="/view-expenses" class="btn btn-primary">View Expenses</a>
+                <a href="/view-income" class="btn btn-success">View Income</a>
+                <button onclick="resetImport()" class="btn btn-secondary">Import Another</button>
+            </div>`;
+    })
+    .catch(() => alert('Import failed — please try again'));
+}
+
+// ---- Save Template ----
+function saveTemplateConfig(name) {
+    const config = {
+        has_headers: document.getElementById('hasHeaders').checked,
+        date: document.getElementById('mapDate').value,
+        description: document.getElementById('mapDescription').value,
+        amount: document.getElementById('mapAmount').value,
+        debit: document.getElementById('mapDebit').value,
+        credit: document.getElementById('mapCredit').value,
+        source_id: document.getElementById('defaultSource').value,
+        category_id: document.getElementById('defaultCategory').value,
+        negative_is: document.getElementById('negativeIs').value
+    };
+    fetch('/csv-import/template/save', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name, config})
+    }).then(r => r.json()).then(d => {
+        if (d.success) console.log('Template saved:', name);
+    });
+}
+
+function goToStep2() {
+    document.getElementById('step3').style.display = 'none';
+    document.getElementById('step2').style.display = 'block';
+}
+
+function resetImport() {
+    document.getElementById('step2').style.display = 'none';
+    document.getElementById('step3').style.display = 'none';
+    document.getElementById('step4').style.display = 'none';
+    document.getElementById('step1').style.display = 'block';
+    document.getElementById('uploadForm').reset();
+    csvData = []; columns = []; parsedRows = [];
+}
+</script>
+{% endblock %}

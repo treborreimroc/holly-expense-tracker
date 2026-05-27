@@ -1734,6 +1734,128 @@ def delete_tax_rate(rate_id):
     conn.commit(); cursor.close(); conn.close()
     return redirect(url_for('manage_tax_rates'))
 
+
+# ============= CSV IMPORT =============
+@app.route('/csv-import')
+@login_required
+def csv_import():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM sources ORDER BY name')
+    sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM categories ORDER BY name')
+    categories = cursor.fetchall()
+    # Load saved templates
+    templates = []
+    try:
+        cursor.execute('SELECT * FROM csv_templates ORDER BY name')
+        templates = cursor.fetchall()
+    except Exception:
+        pass
+    cursor.close(); conn.close()
+    return render_template('csv_import.html',
+                         sources=sources,
+                         categories=categories,
+                         templates=templates)
+
+@app.route('/csv-import/process', methods=['POST'])
+@login_required
+def csv_import_process():
+    data = request.get_json()
+    rows = data.get('rows', [])
+    source_id = data.get('source_id')
+    category_id = data.get('category_id')
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    expenses_imported = 0
+    income_imported = 0
+    errors = 0
+
+    for row in rows:
+        try:
+            # Parse date — handle common formats
+            date_str = row['date'].strip()
+            # Try common date formats
+            from datetime import datetime as dt
+            parsed_date = None
+            for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%m-%d-%Y',
+                        '%Y/%m/%d', '%b %d, %Y', '%d-%b-%Y', '%m/%d/%y']:
+                try:
+                    parsed_date = dt.strptime(date_str, fmt).strftime('%Y-%m-%d')
+                    break
+                except ValueError:
+                    continue
+
+            if not parsed_date:
+                errors += 1
+                continue
+
+            amount = float(row['amount'])
+            description = row['description'][:255]
+
+            if row['type'] == 'expense':
+                cursor.execute("""
+                    INSERT INTO expenses
+                        (date, source_id, description, category_id, amount, created_at)
+                    VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """, (parsed_date, source_id, description, category_id, amount))
+                expenses_imported += 1
+            else:
+                cursor.execute("""
+                    INSERT INTO income
+                        (date, source_id, description, amount, created_at)
+                    VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
+                """, (parsed_date, source_id, description, amount))
+                income_imported += 1
+        except Exception as e:
+            errors += 1
+            continue
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'expenses_imported': expenses_imported,
+        'income_imported': income_imported,
+        'errors': errors
+    })
+
+@app.route('/csv-import/template/save', methods=['POST'])
+@login_required
+def csv_template_save():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    config = data.get('config', {})
+    if not name:
+        return jsonify({'success': False})
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO csv_templates (name, config_json)
+            VALUES (%s, %s)
+            ON CONFLICT (name) DO UPDATE SET config_json = EXCLUDED.config_json
+        """, (name, json.dumps(config)))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    cursor.close(); conn.close()
+    return jsonify({'success': True})
+
+@app.route('/csv-import/template/delete/<int:template_id>', methods=['POST'])
+@login_required
+def csv_template_delete(template_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM csv_templates WHERE id = %s', (template_id,))
+    conn.commit()
+    cursor.close(); conn.close()
+    return jsonify({'success': True})
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

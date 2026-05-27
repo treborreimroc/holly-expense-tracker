@@ -66,6 +66,28 @@
         </div>
     </div>
 
+    <!-- Receipt Section -->
+    <div class="card mb-4 border-secondary">
+        <div class="card-header fw-bold text-muted">📷 Receipt (Optional)</div>
+        <div class="card-body">
+            <input type="file" id="receiptInput" accept="image/*" capture="environment"
+                   style="display:none;" onchange="previewReceipt(this)">
+            <div class="d-flex gap-2 align-items-center flex-wrap">
+                <button type="button" class="btn btn-outline-secondary"
+                        onclick="document.getElementById('receiptInput').click()">
+                    📷 Take Photo / Choose File
+                </button>
+                <span id="receiptFileName" class="text-muted small">No receipt attached</span>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="clearReceiptBtn"
+                        style="display:none;" onclick="clearReceipt()">✕ Remove</button>
+            </div>
+            <div id="receiptPreview" class="mt-3" style="display:none;">
+                <img id="previewImg" src="" class="img-fluid rounded"
+                     style="max-height:200px; border:1px solid #dee2e6;">
+            </div>
+        </div>
+    </div>
+
     <!-- Action Buttons -->
     <div class="d-flex gap-2 flex-wrap">
         <button type="button" class="btn btn-primary btn-lg" id="saveBtn" onclick="saveSplit()" disabled>
@@ -322,8 +344,20 @@ function saveSplit() {
     })
     .then(r => r.json())
     .then(data => {
-        if (data.success) window.location.href = '/view-expenses';
-        else alert('Error: ' + (data.error || 'Unknown error'));
+        if (data.success) {
+            // Upload receipt if one was selected
+            const receiptInput = document.getElementById('receiptInput');
+            if (receiptInput.files && receiptInput.files[0]) {
+                const formData = new FormData();
+                formData.append('receipt', receiptInput.files[0]);
+                fetch(`/expenses/${EXPENSE_ID}/receipt`, { method: 'POST', body: formData })
+                    .finally(() => { window.location.href = '/view-expenses'; });
+            } else {
+                window.location.href = '/view-expenses';
+            }
+        } else {
+            alert('Error: ' + (data.error || 'Unknown error'));
+        }
     })
     .catch(() => alert('Error saving split transaction.'));
 }
@@ -337,6 +371,29 @@ function resetTransaction() {
         if (data.success) window.location.href = '/view-expenses';
         else alert('Error resetting transaction.');
     });
+}
+
+// ---- Receipt preview ----
+function previewReceipt(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        document.getElementById('receiptFileName').textContent = file.name;
+        document.getElementById('clearReceiptBtn').style.display = 'inline-block';
+        const reader = new FileReader();
+        reader.onload = e => {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('receiptPreview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function clearReceipt() {
+    document.getElementById('receiptInput').value = '';
+    document.getElementById('receiptFileName').textContent = 'No receipt attached';
+    document.getElementById('clearReceiptBtn').style.display = 'none';
+    document.getElementById('receiptPreview').style.display = 'none';
+    document.getElementById('previewImg').src = '';
 }
 
 // ---- Init ----

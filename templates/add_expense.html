@@ -5,25 +5,24 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Add New Expense</h2>
-    
-    <form method="POST" class="mt-4">
+
+    <form method="POST" class="mt-4" enctype="multipart/form-data">
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="date" class="form-label">Date</label>
-                <input type="date" class="form-control" id="date" name="date" 
+                <label for="date" class="form-label fw-bold">Date</label>
+                <input type="date" class="form-control" id="date" name="date"
                        value="{{ today }}" required>
             </div>
-            
             <div class="col-md-6 mb-3">
-                <label for="amount" class="form-label">Amount</label>
-                <input type="number" step="0.01" class="form-control" id="amount" name="amount" 
+                <label for="amount" class="form-label fw-bold">Amount ($)</label>
+                <input type="number" step="0.01" class="form-control" id="amount" name="amount"
                        placeholder="0.00" required autofocus>
             </div>
         </div>
-        
+
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="source_id" class="form-label">Source</label>
+                <label for="source_id" class="form-label fw-bold">Source</label>
                 <div class="input-group">
                     <select class="form-control" id="source_id" name="source_id" required>
                         <option value="">Select Source...</option>
@@ -34,9 +33,8 @@
                     <button type="button" class="btn btn-success" onclick="quickAddSource()">+</button>
                 </div>
             </div>
-            
             <div class="col-md-6 mb-3">
-                <label for="category_id" class="form-label">Category</label>
+                <label for="category_id" class="form-label fw-bold">Category</label>
                 <div class="input-group">
                     <select class="form-control" id="category_id" name="category_id" required>
                         <option value="">Select Category...</option>
@@ -50,10 +48,10 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="row">
             <div class="col-md-6 mb-3">
-                <label for="subcategory_id" class="form-label">Subcategory (Optional)</label>
+                <label for="subcategory_id" class="form-label fw-bold">Subcategory (Optional)</label>
                 <div class="input-group">
                     <select class="form-control" id="subcategory_id" name="subcategory_id">
                         <option value="">None</option>
@@ -66,9 +64,8 @@
                     <button type="button" class="btn btn-success" onclick="quickAddSubcategory()">+</button>
                 </div>
             </div>
-            
             <div class="col-md-6 mb-3">
-                <label for="vendor_id" class="form-label">Vendor (Optional)</label>
+                <label for="vendor_id" class="form-label fw-bold">Vendor (Optional)</label>
                 <div class="input-group">
                     <select class="form-control" id="vendor_id" name="vendor_id">
                         <option value="">None</option>
@@ -80,22 +77,47 @@
                 </div>
             </div>
         </div>
-        
+
         <div class="mb-3">
-            <label for="description" class="form-label">Description</label>
-            <input type="text" class="form-control" id="description" name="description" 
+            <label for="description" class="form-label fw-bold">Description</label>
+            <input type="text" class="form-control" id="description" name="description"
                    placeholder="Optional description">
         </div>
-        
+
         <div class="mb-3">
-            <label for="notes" class="form-label">Notes</label>
-            <textarea class="form-control" id="notes" name="notes" rows="3" 
+            <label for="notes" class="form-label fw-bold">Notes</label>
+            <textarea class="form-control" id="notes" name="notes" rows="2"
                       placeholder="Optional notes"></textarea>
         </div>
-        
-        <div class="d-grid gap-2">
+
+        <!-- Receipt Section -->
+        <div class="card mb-4 border-secondary">
+            <div class="card-header fw-bold text-muted">📷 Receipt (Optional)</div>
+            <div class="card-body">
+                <input type="file" id="receiptInput" name="receipt" accept="image/*" capture="environment"
+                       style="display:none;" onchange="previewReceipt(this)">
+
+                <div class="d-flex gap-2 align-items-center flex-wrap">
+                    <button type="button" class="btn btn-outline-secondary"
+                            onclick="document.getElementById('receiptInput').click()">
+                        📷 Take Photo / Choose File
+                    </button>
+                    <span id="receiptFileName" class="text-muted small">No receipt attached</span>
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="clearReceiptBtn"
+                            style="display:none;" onclick="clearReceipt()">✕ Remove</button>
+                </div>
+
+                <!-- Preview -->
+                <div id="receiptPreview" class="mt-3" style="display:none;">
+                    <img id="previewImg" src="" class="img-fluid rounded"
+                         style="max-height:200px; border:1px solid #dee2e6;">
+                </div>
+            </div>
+        </div>
+
+        <div class="d-grid gap-2 d-md-flex">
             <button type="submit" class="btn btn-primary btn-lg">Add Expense</button>
-            <a href="{{ url_for('view_expenses') }}" class="btn btn-secondary">Cancel</a>
+            <a href="{{ url_for('view_expenses') }}" class="btn btn-secondary btn-lg">Cancel</a>
         </div>
     </form>
 </div>
@@ -106,18 +128,37 @@ document.getElementById('category_id').addEventListener('change', function() {
     const categoryId = this.value;
     const subcategorySelect = document.getElementById('subcategory_id');
     const options = subcategorySelect.querySelectorAll('option[data-category]');
-    
     subcategorySelect.value = '';
     options.forEach(opt => opt.style.display = 'none');
-    
     if (categoryId) {
         options.forEach(opt => {
-            if (opt.getAttribute('data-category') === categoryId) {
-                opt.style.display = 'block';
-            }
+            if (opt.getAttribute('data-category') === categoryId) opt.style.display = 'block';
         });
     }
 });
+
+// Receipt preview
+function previewReceipt(input) {
+    if (input.files && input.files[0]) {
+        const file = input.files[0];
+        document.getElementById('receiptFileName').textContent = file.name;
+        document.getElementById('clearReceiptBtn').style.display = 'inline-block';
+        const reader = new FileReader();
+        reader.onload = e => {
+            document.getElementById('previewImg').src = e.target.result;
+            document.getElementById('receiptPreview').style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+function clearReceipt() {
+    document.getElementById('receiptInput').value = '';
+    document.getElementById('receiptFileName').textContent = 'No receipt attached';
+    document.getElementById('clearReceiptBtn').style.display = 'none';
+    document.getElementById('receiptPreview').style.display = 'none';
+    document.getElementById('previewImg').src = '';
+}
 
 // Quick Add functions
 function quickAddSource() {
@@ -133,9 +174,7 @@ function quickAddSource() {
             if (data.success) {
                 const select = document.getElementById('source_id');
                 const option = document.createElement('option');
-                option.value = data.id;
-                option.textContent = data.name;
-                option.selected = true;
+                option.value = data.id; option.textContent = data.name; option.selected = true;
                 select.appendChild(option);
             }
         });
@@ -155,9 +194,7 @@ function quickAddCategory() {
             if (data.success) {
                 const select = document.getElementById('category_id');
                 const option = document.createElement('option');
-                option.value = data.id;
-                option.textContent = data.name;
-                option.selected = true;
+                option.value = data.id; option.textContent = data.name; option.selected = true;
                 select.appendChild(option);
             }
         });
@@ -177,9 +214,7 @@ function quickAddVendor() {
             if (data.success) {
                 const select = document.getElementById('vendor_id');
                 const option = document.createElement('option');
-                option.value = data.id;
-                option.textContent = data.name;
-                option.selected = true;
+                option.value = data.id; option.textContent = data.name; option.selected = true;
                 select.appendChild(option);
             }
         });
@@ -188,11 +223,7 @@ function quickAddVendor() {
 
 function quickAddSubcategory() {
     const categoryId = document.getElementById('category_id').value;
-    if (!categoryId) {
-        alert('Please select a category first');
-        return;
-    }
-    
+    if (!categoryId) { alert('Please select a category first'); return; }
     const name = prompt('Enter new subcategory name:');
     if (name && name.trim()) {
         fetch('{{ url_for("quick_add_subcategory") }}', {
@@ -205,11 +236,9 @@ function quickAddSubcategory() {
             if (data.success) {
                 const select = document.getElementById('subcategory_id');
                 const option = document.createElement('option');
-                option.value = data.id;
-                option.textContent = data.name;
+                option.value = data.id; option.textContent = data.name;
                 option.setAttribute('data-category', categoryId);
-                option.style.display = 'block';
-                option.selected = true;
+                option.style.display = 'block'; option.selected = true;
                 select.appendChild(option);
             }
         });

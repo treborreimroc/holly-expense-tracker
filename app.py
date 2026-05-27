@@ -74,13 +74,25 @@ def add_expense():
         subcategory_id = request.form.get('subcategory_id') or None
         vendor_id = request.form.get('vendor_id') or None
         notes = request.form.get('notes', '')
+
+        # Handle receipt upload
+        receipt_data = None
+        receipt_mime = None
+        if 'receipt' in request.files:
+            file = request.files['receipt']
+            if file and file.filename:
+                receipt_data = psycopg2.Binary(file.read())
+                receipt_mime = file.content_type or 'image/jpeg'
+
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO expenses (date, source_id, description, category_id,
-                                subcategory_id, vendor_id, amount, notes, created_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
-        """, (date_val, source_id, description, category_id, subcategory_id, vendor_id, amount, notes))
+                                subcategory_id, vendor_id, amount, notes,
+                                receipt_data, receipt_mime_type, created_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP)
+        """, (date_val, source_id, description, category_id, subcategory_id,
+                vendor_id, amount, notes, receipt_data, receipt_mime))
         conn.commit(); cursor.close(); conn.close()
         return redirect(url_for('view_expenses'))
 

@@ -1773,12 +1773,11 @@ def csv_import_process():
     income_imported = 0
     errors = 0
 
+    from datetime import datetime as dt
+
     for row in rows:
         try:
-            # Parse date — handle common formats
             date_str = row['date'].strip()
-            # Try common date formats
-            from datetime import datetime as dt
             parsed_date = None
             for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y', '%m-%d-%Y',
                         '%Y/%m/%d', '%b %d, %Y', '%d-%b-%Y', '%m/%d/%y']:
@@ -1796,6 +1795,15 @@ def csv_import_process():
             description = row['description'][:255]
 
             if row['type'] == 'expense':
+                # Duplicate check — same date, amount, description
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt FROM expenses
+                    WHERE date = %s AND amount = %s
+                    AND LOWER(description) = LOWER(%s)
+                """, (parsed_date, amount, description))
+                if cursor.fetchone()['cnt'] > 0:
+                    errors += 1  # count as skipped duplicate
+                    continue
                 cursor.execute("""
                     INSERT INTO expenses
                         (date, source_id, description, category_id, amount, created_at)
@@ -1803,6 +1811,15 @@ def csv_import_process():
                 """, (parsed_date, source_id, description, category_id, amount))
                 expenses_imported += 1
             else:
+                # Duplicate check for income
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt FROM income
+                    WHERE date = %s AND amount = %s
+                    AND LOWER(description) = LOWER(%s)
+                """, (parsed_date, amount, description))
+                if cursor.fetchone()['cnt'] > 0:
+                    errors += 1
+                    continue
                 cursor.execute("""
                     INSERT INTO income
                         (date, source_id, description, amount, created_at)
@@ -1855,6 +1872,176 @@ def csv_template_delete(template_id):
     conn.commit()
     cursor.close(); conn.close()
     return jsonify({'success': True})
+
+
+# ============= ADMIN TOOLS =============
+@app.route('/admin/tools')
+@login_required
+def admin_tools():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    stats = {}
+    for table in ['expenses', 'income', 'categories', 'subcategories',
+                  'vendors', 'sources', 'budget', 'tax_rates', 'users']:
+        try:
+            cursor.execute(f'SELECT COUNT(*) as count FROM {table}')
+            stats[table] = cursor.fetchone()['count']
+        except Exception:
+            stats[table] = 0
+    cursor.close(); conn.close()
+    return render_template('admin_tools.html', stats=stats)
+
+@app.route('/admin/backup/expenses')
+@login_required
+def backup_expenses():
+    import csv
+    from io import StringIO
+    from flask import Response
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT e.date, e.description, e.amount, e.notes,
+               s.name as source, c.name as category,
+               sc.name as subcategory, v.name as vendor,
+               tr.name as tax_rate, e.subtotal, e.tax_amount
+        FROM expenses e
+        LEFT JOIN sources s ON e.source_id = s.id
+        LEFT JOIN categories c ON e.category_id = c.id
+        LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
+        LEFT JOIN vendors v ON e.vendor_id = v.id
+        LEFT JOIN tax_rates tr ON e.tax_rate_id = tr.id
+        WHERE e.archived = 0 AND (e.is_split = 0 OR e.is_split = 2)
+        ORDER BY e.date DESC
+    """)
+    rows = cursor.fetchall()
+    cursor.close(); conn.close()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Date','Description','Amount','Source','Category',
+                     'Subcategory','Vendor','Tax Rate','Subtotal','Tax Amount','Notes'])
+    for r in rows:
+        writer.writerow([r['date'], r['description'], r['amount'], r['source'],
+                        r['category'], r['subcategory'], r['vendor'],
+                        r['tax_rate'], r['subtotal'], r['tax_amount'], r['notes']])
+
+    output.seek(0)
+    filename = f'expenses_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    return Response(output.read(), mimetype='text/csv',
+                   headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+@app.route('/admin/backup/income')
+@login_required
+def backup_income():
+    import csv
+    from io import StringIO
+    from flask import Response
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT i.date, i.description, i.amount, i.notes,
+               s.name as source, ic.name as category
+        FROM income i
+        LEFT JOIN sources s ON i.source_id = s.id
+        LEFT JOIN income_categories ic ON i.category_id = ic.id
+        WHERE i.archived = 0
+        ORDER BY i.date DESC
+    """)
+    rows = cursor.fetchall()
+    cursor.close(); conn.close()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Date','Description','Amount','Source','Category','Notes'])
+    for r in rows:
+        writer.writerow([r['date'], r['description'], r['amount'],
+                        r['source'], r['category'], r['notes']])
+
+    output.seek(0)
+    filename = f'income_backup_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+    return Response(output.read(), mimetype='text/csv',
+                   headers={'Content-Disposition': f'attachment; filename="{filename}"'})
+
+@app.route('/admin/clear', methods=['POST'])
+@login_required
+def admin_clear():
+    if session.get('username') != 'admin':
+        return jsonify({'success': False, 'error': 'Admin only'})
+    
+    action = request.form.get('action')
+    confirm = request.form.get('confirm', '').strip().upper()
+    
+    if confirm != 'DELETE':
+        return jsonify({'success': False, 'error': 'Type DELETE to confirm'})
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    try:
+        if action == 'expenses_only':
+            cursor.execute('DELETE FROM expenses')
+            msg = 'All expenses deleted'
+        elif action == 'income_only':
+            cursor.execute('DELETE FROM income')
+            msg = 'All income deleted'
+        elif action == 'transactions':
+            cursor.execute('DELETE FROM expenses')
+            cursor.execute('DELETE FROM income')
+            cursor.execute('DELETE FROM budget')
+            msg = 'All transactions and budgets deleted'
+        elif action == 'full_reset':
+            for table in ['expenses', 'income', 'budget', 'budget_subcategory',
+                         'subcategories', 'vendors', 'categories', 'income_categories',
+                         'sources', 'tax_rates', 'csv_templates']:
+                cursor.execute(f'DELETE FROM {table}')
+            msg = 'Full reset complete — all data deleted'
+        else:
+            conn.rollback()
+            cursor.close(); conn.close()
+            return jsonify({'success': False, 'error': 'Unknown action'})
+
+        conn.commit()
+        cursor.close(); conn.close()
+        return jsonify({'success': True, 'message': msg})
+    except Exception as e:
+        conn.rollback()
+        cursor.close(); conn.close()
+        return jsonify({'success': False, 'error': str(e)})
+
+
+@app.route('/csv-import/check-duplicates', methods=['POST'])
+@login_required
+def check_duplicates():
+    """Check which rows already exist in the database."""
+    data = request.get_json()
+    rows = data.get('rows', [])
+    duplicate_indices = []
+
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    for i, row in enumerate(rows):
+        try:
+            if row['type'] == 'expense':
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt FROM expenses
+                    WHERE date = %s AND amount = %s
+                    AND LOWER(description) = LOWER(%s)
+                """, (row['date'], float(row['amount']), row['description']))
+            else:
+                cursor.execute("""
+                    SELECT COUNT(*) as cnt FROM income
+                    WHERE date = %s AND amount = %s
+                    AND LOWER(description) = LOWER(%s)
+                """, (row['date'], float(row['amount']), row['description']))
+
+            if cursor.fetchone()['cnt'] > 0:
+                duplicate_indices.append(i)
+        except Exception:
+            pass
+
+    cursor.close(); conn.close()
+    return jsonify({'duplicates': duplicate_indices})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

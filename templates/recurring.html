@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block title %}Recurring Transactions{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>🔄 Recurring Transactions</h2>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mt-3 mb-4" id="recurringTabs">
+        <li class="nav-item">
+            <a class="nav-link active" data-bs-toggle="tab" href="#expensesTab">
+                💸 Recurring Expenses ({{ recurring_expenses|length }})
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" data-bs-toggle="tab" href="#incomeTab">
+                💵 Recurring Income ({{ recurring_income|length }})
+            </a>
+        </li>
+    </ul>
+
+    <div class="tab-content">
+
+        <!-- ===== RECURRING EXPENSES TAB ===== -->
+        <div class="tab-pane fade show active" id="expensesTab">
+
+            <!-- Add New -->
+            <div class="card mb-4">
+                <div class="card-header fw-bold">Add Recurring Expense</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('add_recurring_expense') }}">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Description *</label>
+                                <input type="text" name="description" class="form-control form-control-sm"
+                                       placeholder="e.g. Rent, Netflix..." required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Amount *</label>
+                                <input type="number" step="0.01" name="amount"
+                                       class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Frequency *</label>
+                                <select name="frequency" class="form-control form-control-sm" required>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="biweekly">Bi-weekly</option>
+                                    <option value="monthly" selected>Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small fw-bold">Day</label>
+                                <input type="number" name="day_of_month" min="1" max="31"
+                                       class="form-control form-control-sm" placeholder="1-31">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Start Date *</label>
+                                <input type="date" name="start_date" class="form-control form-control-sm"
+                                       value="{{ today }}" required>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Source</label>
+                                <select name="source_id" class="form-control form-control-sm">
+                                    <option value="">None</option>
+                                    {% for s in sources %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Category</label>
+                                <select name="category_id" id="recCatExp" class="form-control form-control-sm"
+                                        onchange="filterRecSub(this, 'recSubExp')">
+                                    <option value="">None</option>
+                                    {% for c in categories %}
+                                    <option value="{{ c.id }}">{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Subcategory</label>
+                                <select name="subcategory_id" id="recSubExp" class="form-control form-control-sm">
+                                    <option value="">None</option>
+                                    {% for s in subcategories %}
+                                    <option value="{{ s.id }}" data-cat="{{ s.category_id }}" style="display:none;">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Vendor</label>
+                                <select name="vendor_id" class="form-control form-control-sm">
+                                    <option value="">None</option>
+                                    {% for v in vendors %}
+                                    <option value="{{ v.id }}">{{ v.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-success w-100 btn-sm">Add</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- List -->
+            {% if recurring_expenses %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Frequency</th>
+                            <th>Category</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in recurring_expenses %}
+                        <tr {% if not r.is_active %}class="text-muted"{% endif %}>
+                            <td class="fw-bold">{{ r.description }}</td>
+                            <td>${{ "%.2f"|format(r.amount) }}</td>
+                            <td>{{ r.frequency|title }}
+                                {% if r.day_of_month %}<small class="text-muted">(day {{ r.day_of_month }})</small>{% endif %}
+                            </td>
+                            <td>
+                                {% if r.category_name %}
+                                <small>{{ r.category_name }}
+                                    {% if r.subcategory_name %} / {{ r.subcategory_name }}{% endif %}
+                                </small>
+                                {% else %}—{% endif %}
+                            </td>
+                            <td><small>{{ r.source_name or '—' }}</small></td>
+                            <td>
+                                <span class="badge {% if r.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {% if r.is_active %}Active{% else %}Paused{% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    <!-- Post Now -->
+                                    <form method="POST" action="{{ url_for('post_recurring_expense', rec_id=r.id) }}"
+                                          style="display:inline;">
+                                        <input type="hidden" name="post_date" value="{{ today }}">
+                                        <button type="submit" class="btn btn-primary btn-sm"
+                                                title="Post as expense for today"
+                                                onclick="return confirm('Post \'{{ r.description }}\' as an expense for today?')">
+                                            ➕ Post
+                                        </button>
+                                    </form>
+                                    <!-- Toggle -->
+                                    <form method="POST" action="{{ url_for('toggle_recurring_expense', rec_id=r.id) }}"
+                                          style="display:inline;">
+                                        <button type="submit" class="btn btn-warning btn-sm">
+                                            {% if r.is_active %}⏸ Pause{% else %}▶ Resume{% endif %}
+                                        </button>
+                                    </form>
+                                    <!-- Delete -->
+                                    <form method="POST" action="{{ url_for('delete_recurring_expense', rec_id=r.id) }}"
+                                          style="display:inline;"
+                                          onsubmit="return confirm('Delete this recurring expense?')">
+                                        <button type="submit" class="btn btn-danger btn-sm">✕</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">No recurring expenses set up yet.</div>
+            {% endif %}
+        </div>
+
+        <!-- ===== RECURRING INCOME TAB ===== -->
+        <div class="tab-pane fade" id="incomeTab">
+
+            <!-- Add New -->
+            <div class="card mb-4">
+                <div class="card-header fw-bold">Add Recurring Income</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('add_recurring_income') }}">
+                        <div class="row g-2">
+                            <div class="col-md-3">
+                                <label class="form-label small fw-bold">Description *</label>
+                                <input type="text" name="description" class="form-control form-control-sm"
+                                       placeholder="e.g. Salary, Rent income..." required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Amount *</label>
+                                <input type="number" step="0.01" name="amount"
+                                       class="form-control form-control-sm" required>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Frequency *</label>
+                                <select name="frequency" class="form-control form-control-sm" required>
+                                    <option value="weekly">Weekly</option>
+                                    <option value="biweekly" selected>Bi-weekly</option>
+                                    <option value="monthly">Monthly</option>
+                                    <option value="quarterly">Quarterly</option>
+                                    <option value="yearly">Yearly</option>
+                                </select>
+                            </div>
+                            <div class="col-md-1">
+                                <label class="form-label small fw-bold">Day</label>
+                                <input type="number" name="day_of_month" min="1" max="31"
+                                       class="form-control form-control-sm" placeholder="1-31">
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Start Date *</label>
+                                <input type="date" name="start_date" class="form-control form-control-sm"
+                                       value="{{ today }}" required>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-1">
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Source</label>
+                                <select name="source_id" class="form-control form-control-sm">
+                                    <option value="">None</option>
+                                    {% for s in sources %}
+                                    <option value="{{ s.id }}">{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label small fw-bold">Category</label>
+                                <select name="category_id" class="form-control form-control-sm">
+                                    <option value="">None</option>
+                                    {% for c in income_categories %}
+                                    <option value="{{ c.id }}">{{ c.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button type="submit" class="btn btn-success w-100 btn-sm">Add</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- List -->
+            {% if recurring_income %}
+            <div class="table-responsive">
+                <table class="table table-hover table-sm">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Description</th>
+                            <th>Amount</th>
+                            <th>Frequency</th>
+                            <th>Category</th>
+                            <th>Source</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in recurring_income %}
+                        <tr {% if not r.is_active %}class="text-muted"{% endif %}>
+                            <td class="fw-bold">{{ r.description }}</td>
+                            <td class="text-success fw-bold">${{ "%.2f"|format(r.amount) }}</td>
+                            <td>{{ r.frequency|title }}
+                                {% if r.day_of_month %}<small class="text-muted">(day {{ r.day_of_month }})</small>{% endif %}
+                            </td>
+                            <td><small>{{ r.category_name or '—' }}</small></td>
+                            <td><small>{{ r.source_name or '—' }}</small></td>
+                            <td>
+                                <span class="badge {% if r.is_active %}bg-success{% else %}bg-secondary{% endif %}">
+                                    {% if r.is_active %}Active{% else %}Paused{% endif %}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="d-flex gap-1 flex-wrap">
+                                    <form method="POST" action="{{ url_for('post_recurring_income', rec_id=r.id) }}"
+                                          style="display:inline;">
+                                        <input type="hidden" name="post_date" value="{{ today }}">
+                                        <button type="submit" class="btn btn-success btn-sm"
+                                                onclick="return confirm('Post \'{{ r.description }}\' as income for today?')">
+                                            ➕ Post
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('toggle_recurring_income', rec_id=r.id) }}"
+                                          style="display:inline;">
+                                        <button type="submit" class="btn btn-warning btn-sm">
+                                            {% if r.is_active %}⏸ Pause{% else %}▶ Resume{% endif %}
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="{{ url_for('delete_recurring_income', rec_id=r.id) }}"
+                                          style="display:inline;"
+                                          onsubmit="return confirm('Delete this recurring income?')">
+                                        <button type="submit" class="btn btn-danger btn-sm">✕</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="alert alert-info">No recurring income set up yet.</div>
+            {% endif %}
+        </div>
+
+    </div><!-- tab-content -->
+</div>
+
+<script>
+function filterRecSub(catSelect, subId) {
+    const catId = catSelect.value;
+    const subSel = document.getElementById(subId);
+    subSel.querySelectorAll('option[data-cat]').forEach(o => {
+        o.style.display = (!catId || o.getAttribute('data-cat') === catId) ? 'block' : 'none';
+    });
+    subSel.value = '';
+}
+</script>
+{% endblock %}

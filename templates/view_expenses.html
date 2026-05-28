@@ -82,8 +82,19 @@
         <span class="text-muted">
             Showing <strong>{{ expenses|length }}</strong> expense{{ 's' if expenses|length != 1 else '' }}
             {% if filters_active %}<span class="badge bg-warning text-dark ms-1">Filtered</span>{% endif %}
+            {% if show_archived %}<span class="badge bg-secondary ms-1">Showing Archived</span>{% endif %}
         </span>
-        <span class="fs-5 fw-bold text-danger">Total: ${{ "%.2f"|format(total) }}</span>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="fs-5 fw-bold text-danger">Total: ${{ "%.2f"|format(total) }}</span>
+            <a href="{{ url_for('view_expenses', show_archived='true' if not show_archived else 'false') }}"
+               class="btn btn-sm {% if show_archived %}btn-secondary{% else %}btn-outline-secondary{% endif %}">
+                📦 {% if show_archived %}Hide Archived{% else %}Show Archived{% endif %}
+            </a>
+            <button type="button" class="btn btn-sm btn-outline-warning"
+                    data-bs-toggle="modal" data-bs-target="#bulkArchiveModal">
+                Bulk Archive
+            </button>
+        </div>
     </div>
 
     {% if expenses %}
@@ -124,6 +135,7 @@
                     <td class="fw-bold">${{ "%.2f"|format(expense.amount) }}</td>
                     <td>
                         <div class="d-flex gap-1 flex-wrap">
+                            {% if not expense.archived %}
                             <!-- Edit -->
                             <a href="{{ url_for('edit_expense', expense_id=expense.id) }}"
                                class="btn btn-primary btn-sm">Edit</a>
@@ -132,7 +144,7 @@
                             <a href="{{ url_for('split_transaction', expense_id=expense.id) }}"
                                class="btn btn-info btn-sm text-white">🔀</a>
 
-                            <!-- Receipt: show view button if exists, upload if not -->
+                            <!-- Receipt -->
                             {% if expense.id in receipt_ids %}
                                 <button type="button" class="btn btn-success btn-sm"
                                         onclick="viewReceipt({{ expense.id }})"
@@ -141,6 +153,20 @@
                                 <button type="button" class="btn btn-outline-secondary btn-sm"
                                         onclick="triggerUpload({{ expense.id }})"
                                         title="Upload receipt">📷+</button>
+                            {% endif %}
+
+                            <!-- Archive -->
+                            <form method="POST" action="{{ url_for('archive_expense', expense_id=expense.id) }}"
+                                  style="display:inline;">
+                                <button type="submit" class="btn btn-outline-secondary btn-sm"
+                                        title="Archive this expense">📦</button>
+                            </form>
+                            {% else %}
+                            <!-- Unarchive -->
+                            <form method="POST" action="{{ url_for('unarchive_expense', expense_id=expense.id) }}"
+                                  style="display:inline;">
+                                <button type="submit" class="btn btn-outline-success btn-sm">↩ Restore</button>
+                            </form>
                             {% endif %}
 
                             <!-- Delete -->
@@ -197,8 +223,49 @@
     </div>
 </div>
 
+<!-- Bulk Archive Modal -->
+<div class="modal fade" id="bulkArchiveModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">📦 Bulk Archive Expenses</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Archive all expenses older than:</p>
+                <select id="archiveMonths" class="form-control">
+                    <option value="3">3 months</option>
+                    <option value="6" selected>6 months</option>
+                    <option value="12">12 months</option>
+                    <option value="24">2 years</option>
+                </select>
+                <p class="text-muted small mt-2">Archived expenses are hidden but still counted in P&L and Budget reports.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="doBulkArchive()">Archive</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 let currentExpenseId = null;
+
+function doBulkArchive() {
+    const months = document.getElementById('archiveMonths').value;
+    fetch('/expenses/bulk-archive', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'months=' + months
+    })
+    .then(r => r.json())
+    .then(data => {
+        bootstrap.Modal.getInstance(document.getElementById('bulkArchiveModal')).hide();
+        alert('✅ Archived ' + data.count + ' expense(s).');
+        location.reload();
+    });
+}
 
 // ---- Filter subcategories ----
 document.getElementById('filter_category').addEventListener('change', function() {

@@ -71,24 +71,32 @@
                         <select id="mapDescription" class="form-control form-control-sm"></select>
                     </div>
                     <hr class="my-2">
-                    <p class="small text-muted fw-bold mb-1">Choose ONE of the following amount formats:</p>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Single Amount Column
-                            <span class="text-muted">(Royal Bank — positive/negative)</span>
-                        </label>
-                        <select id="mapAmount" class="form-control form-control-sm"></select>
+                    <label class="form-label small fw-bold">Bank / Amount Format</label>
+                    <select id="amountFormat" class="form-control form-control-sm mb-3"
+                            onchange="toggleAmountFormat(this.value)">
+                        <option value="single">Royal Bank / Single column (one +/- amount column)</option>
+                        <option value="split">CIBC / Split columns (separate debit and credit columns)</option>
+                    </select>
+
+                    <!-- Single column (Royal Bank) -->
+                    <div id="formatSingle">
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Amount Column</label>
+                            <select id="mapAmount" class="form-control form-control-sm"></select>
+                            <small class="text-muted">Negative = expense, positive = income</small>
+                        </div>
                     </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Debit/Expense Column
-                            <span class="text-muted">(CIBC)</span>
-                        </label>
-                        <select id="mapDebit" class="form-control form-control-sm"></select>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label small fw-bold">Credit/Income Column
-                            <span class="text-muted">(CIBC)</span>
-                        </label>
-                        <select id="mapCredit" class="form-control form-control-sm"></select>
+
+                    <!-- Split columns (CIBC) -->
+                    <div id="formatSplit" style="display:none;">
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Debit / Expense Column</label>
+                            <select id="mapDebit" class="form-control form-control-sm"></select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label small fw-bold">Credit / Income Column</label>
+                            <select id="mapCredit" class="form-control form-control-sm"></select>
+                        </div>
                     </div>
                 </div>
 
@@ -113,10 +121,10 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label small fw-bold">For single amount column: negative values are</label>
+                    <div class="mb-3" id="negativeIsDiv">
+                        <label class="form-label small fw-bold">Negative amounts are</label>
                         <select id="negativeIs" class="form-control form-control-sm">
-                            <option value="expense">Expenses (typical)</option>
+                            <option value="expense">Expenses (typical for most banks)</option>
                             <option value="income">Income</option>
                         </select>
                     </div>
@@ -346,27 +354,45 @@ function trySet(id, val) {
 function applyTemplateConfig(cfg) {
     if (cfg.date        !== undefined) trySet('mapDate',        cfg.date);
     if (cfg.description !== undefined) trySet('mapDescription', cfg.description);
-    if (cfg.amount      !== undefined) trySet('mapAmount',      cfg.amount);
-    if (cfg.debit       !== undefined) trySet('mapDebit',       cfg.debit);
-    if (cfg.credit      !== undefined) trySet('mapCredit',      cfg.credit);
     if (cfg.source_id)   trySet('defaultSource',   cfg.source_id);
     if (cfg.category_id) trySet('defaultCategory', cfg.category_id);
     if (cfg.negative_is) document.getElementById('negativeIs').value = cfg.negative_is;
+    // Set format and apply amount columns
+    if (cfg.amount) {
+        document.getElementById('amountFormat').value = 'single';
+        toggleAmountFormat('single');
+        trySet('mapAmount', cfg.amount);
+    } else if (cfg.debit || cfg.credit) {
+        document.getElementById('amountFormat').value = 'split';
+        toggleAmountFormat('split');
+        if (cfg.debit)  trySet('mapDebit',  cfg.debit);
+        if (cfg.credit) trySet('mapCredit', cfg.credit);
+    }
+}
+
+// ---- Toggle amount format ----
+function toggleAmountFormat(val) {
+    document.getElementById('formatSingle').style.display = val === 'single' ? 'block' : 'none';
+    document.getElementById('formatSplit').style.display  = val === 'split'  ? 'block' : 'none';
 }
 
 // ---- Preview Import ----
 function previewImport() {
     const dateCol   = document.getElementById('mapDate').value;
     const descCol   = document.getElementById('mapDescription').value;
-    const amtCol    = document.getElementById('mapAmount').value;
-    const debitCol  = document.getElementById('mapDebit').value;
-    const creditCol = document.getElementById('mapCredit').value;
+    const format    = document.getElementById('amountFormat').value;
+    const amtCol    = format === 'single' ? document.getElementById('mapAmount').value : '';
+    const debitCol  = format === 'split'  ? document.getElementById('mapDebit').value  : '';
+    const creditCol = format === 'split'  ? document.getElementById('mapCredit').value : '';
     const negIs     = document.getElementById('negativeIs').value;
 
     if (dateCol === '') { showError('mapError', 'Please select a Date column.'); return; }
     if (descCol === '') { showError('mapError', 'Please select a Description column.'); return; }
-    if (!amtCol && !debitCol && !creditCol) {
-        showError('mapError', 'Please select at least one amount column.'); return;
+    if (format === 'single' && !amtCol) {
+        showError('mapError', 'Please select the Amount column.'); return;
+    }
+    if (format === 'split' && !debitCol && !creditCol) {
+        showError('mapError', 'Please select at least a Debit or Credit column.'); return;
     }
     document.getElementById('mapError').style.display = 'none';
 

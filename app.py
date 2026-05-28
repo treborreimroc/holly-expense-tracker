@@ -138,9 +138,10 @@ def view_expenses():
         LEFT JOIN categories c ON e.category_id = c.id
         LEFT JOIN subcategories sc ON e.subcategory_id = sc.id
         LEFT JOIN vendors v ON e.vendor_id = v.id
-        WHERE e.archived = 0 AND (e.is_split = 0 OR e.is_split = 2)
+        WHERE (e.archived = %s) AND (e.is_split = 0 OR e.is_split = 2)
     """
-    params = []
+    show_archived = request.args.get('show_archived') == 'true'
+    params = [1 if show_archived else 0]
     if filter_date_from: query += ' AND e.date >= %s'; params.append(filter_date_from)
     if filter_date_to: query += ' AND e.date <= %s'; params.append(filter_date_to)
     if filter_category: query += ' AND e.category_id = %s'; params.append(filter_category)
@@ -174,6 +175,7 @@ def view_expenses():
                           filter_subcategory, filter_vendor, filter_source, filter_search])
     return render_template('view_expenses.html', expenses=expenses, total=total,
                          receipt_ids=receipt_ids,
+                         show_archived=show_archived,
                          categories=categories, subcategories=subcategories,
                          vendors=vendors, sources=sources,
                          filter_date_from=filter_date_from, filter_date_to=filter_date_to,
@@ -258,9 +260,10 @@ def view_income():
         FROM income i
         LEFT JOIN sources s ON i.source_id = s.id
         LEFT JOIN income_categories ic ON i.category_id = ic.id
-        WHERE i.archived = 0
+        WHERE (i.archived = %s)
     """
-    params = []
+    show_archived = request.args.get('show_archived') == 'true'
+    params = [1 if show_archived else 0]
     if filter_date_from: query += ' AND i.date >= %s'; params.append(filter_date_from)
     if filter_date_to: query += ' AND i.date <= %s'; params.append(filter_date_to)
     if filter_category: query += ' AND i.category_id = %s'; params.append(filter_category)
@@ -277,6 +280,7 @@ def view_income():
     cursor.close(); conn.close()
     filters_active = any([filter_date_from, filter_date_to, filter_category, filter_source, filter_search])
     return render_template('view_income.html', income_list=income_list, total=total,
+                         show_archived=show_archived,
                          income_categories=income_categories, sources=sources,
                          filter_date_from=filter_date_from, filter_date_to=filter_date_to,
                          filter_category=filter_category, filter_source=filter_source,
@@ -2042,6 +2046,234 @@ def check_duplicates():
 
     cursor.close(); conn.close()
     return jsonify({'duplicates': duplicate_indices})
+
+
+# ============= ARCHIVE =============
+@app.route('/expenses/archive/<int:expense_id>', methods=['POST'])
+@login_required
+def archive_expense(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE expenses SET archived = 1 WHERE id = %s', (expense_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(request.referrer or url_for('view_expenses'))
+
+@app.route('/expenses/unarchive/<int:expense_id>', methods=['POST'])
+@login_required
+def unarchive_expense(expense_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE expenses SET archived = 0 WHERE id = %s', (expense_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(request.referrer or url_for('view_expenses'))
+
+@app.route('/income/archive/<int:income_id>', methods=['POST'])
+@login_required
+def archive_income(income_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE income SET archived = 1 WHERE id = %s', (income_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(request.referrer or url_for('view_income'))
+
+@app.route('/income/unarchive/<int:income_id>', methods=['POST'])
+@login_required
+def unarchive_income(income_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE income SET archived = 0 WHERE id = %s', (income_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(request.referrer or url_for('view_income'))
+
+@app.route('/expenses/bulk-archive', methods=['POST'])
+@login_required
+def bulk_archive_expenses():
+    months = int(request.form.get('months', 6))
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE expenses SET archived = 1
+        WHERE date < CURRENT_DATE - INTERVAL '%s months'
+        AND archived = 0
+    """, (months,))
+    count = cursor.rowcount
+    conn.commit(); cursor.close(); conn.close()
+    return jsonify({'success': True, 'count': count})
+
+# ============= RECURRING EXPENSES =============
+@app.route('/recurring')
+@login_required
+def recurring():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute("""
+        SELECT r.*, s.name as source_name, c.name as category_name,
+               sc.name as subcategory_name, v.name as vendor_name
+        FROM recurring_expenses r
+        LEFT JOIN sources s ON r.source_id = s.id
+        LEFT JOIN categories c ON r.category_id = c.id
+        LEFT JOIN subcategories sc ON r.subcategory_id = sc.id
+        LEFT JOIN vendors v ON r.vendor_id = v.id
+        ORDER BY r.is_active DESC, r.description
+    """)
+    recurring_expenses = cursor.fetchall()
+    cursor.execute("""
+        SELECT r.*, s.name as source_name, ic.name as category_name
+        FROM recurring_income r
+        LEFT JOIN sources s ON r.source_id = s.id
+        LEFT JOIN income_categories ic ON r.category_id = ic.id
+        ORDER BY r.is_active DESC, r.description
+    """)
+    recurring_income = cursor.fetchall()
+    cursor.execute('SELECT * FROM sources ORDER BY name'); sources = cursor.fetchall()
+    cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
+    cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
+    cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
+    cursor.execute('SELECT * FROM income_categories ORDER BY name'); income_categories = cursor.fetchall()
+    cursor.close(); conn.close()
+    today = datetime.now().strftime('%Y-%m-%d')
+    return render_template('recurring.html',
+                         recurring_expenses=recurring_expenses,
+                         recurring_income=recurring_income,
+                         sources=sources, categories=categories,
+                         subcategories=subcategories, vendors=vendors,
+                         income_categories=income_categories, today=today)
+
+@app.route('/recurring/expense/add', methods=['POST'])
+@login_required
+def add_recurring_expense():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO recurring_expenses
+            (source_id, description, category_id, subcategory_id, vendor_id,
+             amount, notes, frequency, day_of_month, start_date, is_active)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1)
+    """, (
+        request.form.get('source_id') or None,
+        request.form.get('description',''),
+        request.form.get('category_id') or None,
+        request.form.get('subcategory_id') or None,
+        request.form.get('vendor_id') or None,
+        float(request.form['amount']),
+        request.form.get('notes',''),
+        request.form['frequency'],
+        request.form.get('day_of_month') or None,
+        request.form['start_date']
+    ))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/expense/delete/<int:rec_id>', methods=['POST'])
+@login_required
+def delete_recurring_expense(rec_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM recurring_expenses WHERE id = %s', (rec_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/expense/toggle/<int:rec_id>', methods=['POST'])
+@login_required
+def toggle_recurring_expense(rec_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE recurring_expenses
+        SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+        WHERE id = %s
+    """, (rec_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/expense/post/<int:rec_id>', methods=['POST'])
+@login_required
+def post_recurring_expense(rec_id):
+    """Manually post a recurring expense as an actual expense for today."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM recurring_expenses WHERE id = %s', (rec_id,))
+    rec = cursor.fetchone()
+    if rec:
+        post_date = request.form.get('post_date', datetime.now().strftime('%Y-%m-%d'))
+        cursor.execute("""
+            INSERT INTO expenses
+                (date, source_id, description, category_id, subcategory_id,
+                 vendor_id, amount, notes, recurring_id, created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+        """, (post_date, rec['source_id'], rec['description'], rec['category_id'],
+              rec['subcategory_id'], rec['vendor_id'], rec['amount'],
+              rec['notes'], rec_id))
+        conn.commit()
+    cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+# ---- Recurring Income ----
+@app.route('/recurring/income/add', methods=['POST'])
+@login_required
+def add_recurring_income():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        INSERT INTO recurring_income
+            (source_id, description, category_id, amount, notes,
+             frequency, day_of_month, start_date, is_active)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,1)
+    """, (
+        request.form.get('source_id') or None,
+        request.form.get('description',''),
+        request.form.get('category_id') or None,
+        float(request.form['amount']),
+        request.form.get('notes',''),
+        request.form['frequency'],
+        request.form.get('day_of_month') or None,
+        request.form['start_date']
+    ))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/income/delete/<int:rec_id>', methods=['POST'])
+@login_required
+def delete_recurring_income(rec_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM recurring_income WHERE id = %s', (rec_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/income/toggle/<int:rec_id>', methods=['POST'])
+@login_required
+def toggle_recurring_income(rec_id):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE recurring_income
+        SET is_active = CASE WHEN is_active = 1 THEN 0 ELSE 1 END
+        WHERE id = %s
+    """, (rec_id,))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
+
+@app.route('/recurring/income/post/<int:rec_id>', methods=['POST'])
+@login_required
+def post_recurring_income(rec_id):
+    """Manually post a recurring income as an actual income entry."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute('SELECT * FROM recurring_income WHERE id = %s', (rec_id,))
+    rec = cursor.fetchone()
+    if rec:
+        post_date = request.form.get('post_date', datetime.now().strftime('%Y-%m-%d'))
+        cursor.execute("""
+            INSERT INTO income
+                (date, source_id, description, category_id,
+                 amount, notes, recurring_id, created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
+        """, (post_date, rec['source_id'], rec['description'],
+              rec['category_id'], rec['amount'], rec['notes'], rec_id))
+        conn.commit()
+    cursor.close(); conn.close()
+    return redirect(url_for('recurring'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

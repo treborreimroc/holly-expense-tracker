@@ -1736,7 +1736,7 @@ def delete_tax_rate(rate_id):
 
 
 # ============= CSV IMPORT =============
-@app.route('/csv-import')
+@app.route('/csv-import', methods=['GET', 'POST'])
 @login_required
 def csv_import():
     conn = get_db_connection()

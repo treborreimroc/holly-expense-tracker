@@ -3,16 +3,19 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Manage Categories</h2>
-    
+
+    <!-- Add New -->
     <div class="card mt-4">
         <div class="card-header">Add New Category</div>
         <div class="card-body">
             <form method="POST" action="{{ url_for('add_category') }}">
-                <div class="row">
-                    <div class="col-md-6">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small fw-bold">Category Name</label>
                         <input type="text" name="name" class="form-control" placeholder="Category Name" required>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
+                        <label class="form-label small fw-bold">Colour</label>
                         <input type="color" name="color" class="form-control" value="#6c757d">
                     </div>
                     <div class="col-md-2">
@@ -22,24 +25,33 @@
             </form>
         </div>
     </div>
-    
+
+    <!-- List -->
     <table class="table table-striped mt-4">
-        <thead>
+        <thead class="table-dark">
             <tr>
                 <th>Name</th>
-                <th>Color</th>
-                <th>Actions</th>
+                <th>Colour</th>
+                <th>Edit</th>
+                <th>Delete</th>
             </tr>
         </thead>
         <tbody>
             {% for category in categories %}
             <tr>
-                <td>{{ category.name }}</td>
-                <td><span class="badge" style="background-color: {{ category.color }}">{{ category.color }}</span></td>
+                <td class="fw-bold align-middle">
+                    <span class="badge me-2" style="background-color: {{ category.color }}">{{ category.name }}</span>
+                </td>
+                <td class="align-middle">{{ category.color }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}" 
-                          style="display:inline;"
-                          onsubmit="return confirm('Delete this category?')">
+                    <button type="button" class="btn btn-warning btn-sm"
+                            onclick="showEdit({{ category.id }}, '{{ category.name }}', '{{ category.color }}')">
+                        ✏️ Edit
+                    </button>
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_category', category_id=category.id) }}"
+                          onsubmit="return confirm('Delete {{ category.name }}? This will also remove all its subcategories.')">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
                 </td>
@@ -47,7 +59,78 @@
             {% endfor %}
         </tbody>
     </table>
-    
+
     <a href="{{ url_for('manage') }}" class="btn btn-secondary">Back to Admin</a>
 </div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Name</label>
+                        <input type="text" name="name" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Colour</label>
+                        <div class="d-flex gap-3 align-items-center">
+                            <input type="color" name="color" id="editColor" class="form-control" style="width:80px; height:45px;">
+                            <div class="flex-grow-1">
+                                <label class="form-label small text-muted">Quick colours:</label>
+                                <div class="d-flex flex-wrap gap-1">
+                                    {% set colors = ['#ff6b6b','#feca57','#48dbfb','#ff9ff3','#54a0ff',
+                                                     '#5f27cd','#00d2d3','#1dd1a1','#f368e0','#ff9f43',
+                                                     '#10ac84','#ee5a24','#0652DD','#9980FA','#c44569'] %}
+                                    {% for c in colors %}
+                                    <div onclick="document.getElementById('editColor').value='{{ c }}'"
+                                         style="width:28px;height:28px;background:{{ c }};border-radius:4px;cursor:pointer;border:2px solid #dee2e6;"
+                                         title="{{ c }}"></div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Live preview -->
+                    <div class="mt-2">
+                        <label class="form-label small text-muted">Preview:</label><br>
+                        <span class="badge fs-6" id="colorPreview">Category Name</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function showEdit(id, name, color) {
+    document.getElementById('editForm').action = '/manage/categories/edit/' + id;
+    document.getElementById('editName').value = name;
+    document.getElementById('editColor').value = color;
+    updatePreview(name, color);
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+
+document.getElementById('editColor').addEventListener('input', function() {
+    updatePreview(document.getElementById('editName').value, this.value);
+});
+document.getElementById('editName').addEventListener('input', function() {
+    updatePreview(this.value, document.getElementById('editColor').value);
+});
+
+function updatePreview(name, color) {
+    const preview = document.getElementById('colorPreview');
+    preview.textContent = name || 'Category Name';
+    preview.style.backgroundColor = color;
+}
+</script>
 {% endblock %}

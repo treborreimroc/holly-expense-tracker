@@ -490,6 +490,7 @@ def manage():
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute('SELECT COUNT(*) as count FROM sources'); sources_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM categories'); categories_count = cursor.fetchone()['count']
+    cursor.execute('SELECT COUNT(*) as count FROM subcategories'); subcategories_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM vendors'); vendors_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM expenses'); expenses_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM income'); income_count = cursor.fetchone()['count']
@@ -497,7 +498,7 @@ def manage():
     cursor.execute('SELECT COUNT(*) as count FROM users'); users_count = cursor.fetchone()['count']
     cursor.execute('SELECT COUNT(*) as count FROM tax_rates WHERE is_active = 1'); tax_rates_count = cursor.fetchone()['count']
     cursor.close(); conn.close()
-    stats = {'sources': sources_count, 'categories': categories_count, 'vendors': vendors_count,
+    stats = {'sources': sources_count, 'categories': categories_count, 'subcategories': subcategories_count, 'vendors': vendors_count,
              'expenses': expenses_count, 'income': income_count, 'income_categories': income_cat_count,
              'users': users_count, 'tax_rates': tax_rates_count}
     return render_template('manage.html', stats=stats)
@@ -550,6 +551,12 @@ def add_category():
 @login_required
 def delete_category(category_id):
     conn = get_db_connection(); cursor = conn.cursor()
+    # Nullify foreign keys first, then delete subcategories, then category
+    cursor.execute('UPDATE expenses SET subcategory_id = NULL WHERE subcategory_id IN (SELECT id FROM subcategories WHERE category_id = %s)', (category_id,))
+    cursor.execute('UPDATE expenses SET category_id = NULL WHERE category_id = %s', (category_id,))
+    cursor.execute('DELETE FROM budget WHERE category_id = %s', (category_id,))
+    cursor.execute('DELETE FROM budget_subcategory WHERE subcategory_id IN (SELECT id FROM subcategories WHERE category_id = %s)', (category_id,))
+    cursor.execute('DELETE FROM subcategories WHERE category_id = %s', (category_id,))
     cursor.execute('DELETE FROM categories WHERE id = %s', (category_id,))
     conn.commit(); cursor.close(); conn.close()
     return redirect(url_for('manage_categories'))
@@ -2274,6 +2281,28 @@ def post_recurring_income(rec_id):
         conn.commit()
     cursor.close(); conn.close()
     return redirect(url_for('recurring'))
+
+
+@app.route('/manage/categories/edit/<int:category_id>', methods=['POST'])
+@login_required
+def edit_category(category_id):
+    name = request.form['name'].strip()
+    color = request.form.get('color', '#6c757d')
+    conn = get_db_connection(); cursor = conn.cursor()
+    cursor.execute('UPDATE categories SET name = %s, color = %s WHERE id = %s', (name, color, category_id))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('manage_categories'))
+
+@app.route('/manage/subcategories/edit/<int:subcategory_id>', methods=['POST'])
+@login_required
+def edit_subcategory(subcategory_id):
+    name = request.form['name'].strip()
+    category_id = request.form['category_id']
+    conn = get_db_connection(); cursor = conn.cursor()
+    cursor.execute('UPDATE subcategories SET name = %s, category_id = %s WHERE id = %s',
+                  (name, category_id, subcategory_id))
+    conn.commit(); cursor.close(); conn.close()
+    return redirect(url_for('manage_subcategories'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

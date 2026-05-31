@@ -3,16 +3,19 @@
 {% block content %}
 <div class="container mt-4">
     <h2>Manage Subcategories</h2>
-    
+
+    <!-- Add New -->
     <div class="card mt-4">
         <div class="card-header">Add New Subcategory</div>
         <div class="card-body">
             <form method="POST" action="{{ url_for('add_subcategory') }}">
-                <div class="row">
-                    <div class="col-md-6">
+                <div class="row g-2 align-items-end">
+                    <div class="col-md-5">
+                        <label class="form-label small fw-bold">Subcategory Name</label>
                         <input type="text" name="name" class="form-control" placeholder="Subcategory Name" required>
                     </div>
                     <div class="col-md-4">
+                        <label class="form-label small fw-bold">Category</label>
                         <select name="category_id" class="form-control" required>
                             <option value="">Select Category</option>
                             {% for category in categories %}
@@ -27,23 +30,30 @@
             </form>
         </div>
     </div>
-    
+
+    <!-- List -->
     <table class="table table-striped mt-4">
-        <thead>
+        <thead class="table-dark">
             <tr>
                 <th>Name</th>
                 <th>Category</th>
-                <th>Actions</th>
+                <th>Edit</th>
+                <th>Delete</th>
             </tr>
         </thead>
         <tbody>
             {% for sub in subcategories %}
             <tr>
-                <td>{{ sub.name }}</td>
-                <td>{{ sub.category_name }}</td>
+                <td class="fw-bold align-middle">{{ sub.name }}</td>
+                <td class="align-middle">{{ sub.category_name }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('delete_subcategory', subcategory_id=sub.id) }}" 
-                          style="display:inline;"
+                    <button type="button" class="btn btn-warning btn-sm"
+                            onclick="showEdit({{ sub.id }}, '{{ sub.name }}', {{ sub.category_id }})">
+                        ✏️ Edit
+                    </button>
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('delete_subcategory', subcategory_id=sub.id) }}"
                           onsubmit="return confirm('Delete this subcategory?')">
                         <button type="submit" class="btn btn-danger btn-sm">Delete</button>
                     </form>
@@ -52,7 +62,48 @@
             {% endfor %}
         </tbody>
     </table>
-    
+
     <a href="{{ url_for('manage') }}" class="btn btn-secondary">Back to Admin</a>
 </div>
+
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Subcategory</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm" method="POST">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Name</label>
+                        <input type="text" name="name" id="editName" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Category</label>
+                        <select name="category_id" id="editCategory" class="form-control" required>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}">{{ category.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function showEdit(id, name, categoryId) {
+    document.getElementById('editForm').action = '/manage/subcategories/edit/' + id;
+    document.getElementById('editName').value = name;
+    document.getElementById('editCategory').value = categoryId;
+    new bootstrap.Modal(document.getElementById('editModal')).show();
+}
+</script>
 {% endblock %}

@@ -36,8 +36,12 @@ def login_required(f):
 @app.route('/')
 def index():
     return redirect(url_for('login'))
-
-@app.route('/login', methods=['GET', 'POST'])
+    
+@app.route('/inspiration')
+@login_required
+def inspiration():
+    return render_template('inspiration.html')
+    @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username', 'admin')

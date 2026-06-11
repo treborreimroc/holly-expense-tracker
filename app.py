@@ -36,12 +36,13 @@ def login_required(f):
 @app.route('/')
 def index():
     return redirect(url_for('login'))
-    
+
 @app.route('/inspiration')
 @login_required
 def inspiration():
     return render_template('inspiration.html')
-    @app.route('/login', methods=['GET', 'POST'])
+
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         username = request.form.get('username', 'admin')
@@ -160,7 +161,6 @@ def view_expenses():
     expenses = cursor.fetchall()
     total = sum(float(e['amount']) for e in expenses)
 
-    # Check which expenses have receipts (safe — handles missing column)
     receipt_ids = set()
     try:
         if expenses:
@@ -169,7 +169,7 @@ def view_expenses():
             cursor.execute(f'SELECT id FROM expenses WHERE id IN ({placeholders}) AND receipt_data IS NOT NULL', exp_ids)
             receipt_ids = {r['id'] for r in cursor.fetchall()}
     except Exception:
-        pass  # Column doesn't exist yet — receipts just won't show
+        pass
     cursor.execute('SELECT * FROM categories ORDER BY name'); categories = cursor.fetchall()
     cursor.execute('SELECT * FROM subcategories ORDER BY name'); subcategories = cursor.fetchall()
     cursor.execute('SELECT * FROM vendors ORDER BY name'); vendors = cursor.fetchall()
@@ -330,16 +330,13 @@ def budget():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Month date range
     y, m = int(selected_month[:4]), int(selected_month[5:7])
     month_start = f'{y}-{m:02d}-01'
     month_end = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
 
-    # All categories
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
 
-    # All subcategories with their category
     cursor.execute("""
         SELECT sc.*, c.name as category_name
         FROM subcategories sc
@@ -348,15 +345,12 @@ def budget():
     """)
     all_subcategories = cursor.fetchall()
 
-    # Budgets for this month — category level
     cursor.execute('SELECT * FROM budget WHERE month = %s', (selected_month,))
     cat_budgets = {row['category_id']: float(row['amount']) for row in cursor.fetchall()}
 
-    # Budgets for this month — subcategory level
     cursor.execute('SELECT * FROM budget_subcategory WHERE month = %s', (selected_month,))
     sub_budgets = {row['subcategory_id']: float(row['amount']) for row in cursor.fetchall()}
 
-    # Actual spending by category
     cursor.execute("""
         SELECT category_id, SUM(amount) as total
         FROM expenses WHERE archived = 0 AND date >= %s AND date < %s
@@ -364,7 +358,6 @@ def budget():
     """, (month_start, month_end))
     cat_spending = {row['category_id']: float(row['total']) for row in cursor.fetchall()}
 
-    # Actual spending by subcategory
     cursor.execute("""
         SELECT subcategory_id, SUM(amount) as total
         FROM expenses WHERE archived = 0 AND date >= %s AND date < %s
@@ -376,7 +369,6 @@ def budget():
     cursor.close()
     conn.close()
 
-    # Build structured data: categories with nested subcategories
     budget_data = []
     total_budgeted = 0
     total_spent = 0
@@ -387,7 +379,6 @@ def budget():
         spent = cat_spending.get(cat_id, 0)
         remaining = budgeted - spent
 
-        # Get subcategories for this category
         subs = []
         for sub in all_subcategories:
             if sub['category_id'] == cat_id:
@@ -426,7 +417,6 @@ def set_budget():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Process all form fields
     for key, value in request.form.items():
         if key == 'month':
             continue
@@ -463,7 +453,6 @@ def copy_budget():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Copy category budgets
     cursor.execute('SELECT * FROM budget WHERE month = %s', (prev_month,))
     for row in cursor.fetchall():
         cursor.execute("""
@@ -472,7 +461,6 @@ def copy_budget():
             ON CONFLICT (category_id, month) DO UPDATE SET amount = EXCLUDED.amount
         """, (row['category_id'], month, row['amount']))
 
-    # Copy subcategory budgets
     cursor.execute('SELECT * FROM budget_subcategory WHERE month = %s', (prev_month,))
     for row in cursor.fetchall():
         cursor.execute("""
@@ -555,7 +543,6 @@ def add_category():
 @login_required
 def delete_category(category_id):
     conn = get_db_connection(); cursor = conn.cursor()
-    # Nullify foreign keys first, then delete subcategories, then category
     cursor.execute('UPDATE expenses SET subcategory_id = NULL WHERE subcategory_id IN (SELECT id FROM subcategories WHERE category_id = %s)', (category_id,))
     cursor.execute('UPDATE expenses SET category_id = NULL WHERE category_id = %s', (category_id,))
     cursor.execute('DELETE FROM budget WHERE category_id = %s', (category_id,))
@@ -719,15 +706,12 @@ def pnl():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Determine date range for current period
     if view_type == 'month':
         y, m = int(selected_month[:4]), int(selected_month[5:7])
         start_date = f'{y}-{m:02d}-01'
         end_date = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
         period_label = selected_month
-        # Last year same month
         ly_start = f'{y-1}-{m:02d}-01'
-        ly_end = f'{y}-{m:02d}-01' if m == 12 else f'{y-1}-{m+1:02d}-01' if m < 12 else f'{y}-01-01'
         ly_end = f'{y-1+1}-01-01' if m == 12 else f'{y-1}-{m+1:02d}-01'
     elif view_type == 'year':
         start_date = f'{selected_year}-01-01'
@@ -735,14 +719,13 @@ def pnl():
         period_label = str(selected_year)
         ly_start = f'{selected_year-1}-01-01'
         ly_end = f'{selected_year}-01-01'
-    else:  # range
+    else:
         start_date = date_from
         end_date = date_to
         period_label = f'{date_from} to {date_to}'
         ly_start = ''
         ly_end = ''
 
-    # ---- INCOME ----
     cursor.execute("""
         SELECT ic.name as category_name, ic.color, SUM(i.amount) as actual
         FROM income i
@@ -752,7 +735,6 @@ def pnl():
     """, (start_date, end_date))
     income_rows = cursor.fetchall()
 
-    # Income budgets for period (use month budget if month view)
     income_budget_dict = {}
     if view_type == 'month':
         cursor.execute("""
@@ -764,7 +746,6 @@ def pnl():
         for row in cursor.fetchall():
             income_budget_dict[row['category_name']] = float(row['amount'])
 
-    # Last year income
     ly_income_dict = {}
     if ly_start and ly_end:
         cursor.execute("""
@@ -797,7 +778,6 @@ def pnl():
 
     ly_total_income = sum(ly_income_dict.values())
 
-    # ---- EXPENSES ----
     cursor.execute("""
         SELECT c.id as category_id, c.name as category_name, c.color, SUM(e.amount) as actual
         FROM expenses e
@@ -807,7 +787,6 @@ def pnl():
     """, (start_date, end_date))
     exp_rows = cursor.fetchall()
 
-    # Expense budgets
     exp_budget_dict = {}
     if view_type == 'month':
         cursor.execute("""
@@ -816,7 +795,6 @@ def pnl():
         for row in cursor.fetchall():
             exp_budget_dict[row['category_id']] = float(row['amount'])
 
-    # Subcategory actuals
     cursor.execute("""
         SELECT e.category_id, sc.id as sub_id, sc.name, SUM(e.amount) as actual
         FROM expenses e
@@ -826,14 +804,12 @@ def pnl():
     """, (start_date, end_date))
     sub_actuals = cursor.fetchall()
 
-    # Subcategory budgets
     sub_budget_dict = {}
     if view_type == 'month':
         cursor.execute("SELECT subcategory_id, amount FROM budget_subcategory WHERE month = %s", (selected_month,))
         for row in cursor.fetchall():
             sub_budget_dict[row['subcategory_id']] = float(row['amount'])
 
-    # Build sub lookup by category
     sub_lookup = {}
     for sub in sub_actuals:
         cat_id = sub['category_id']
@@ -846,7 +822,6 @@ def pnl():
             'budget': sub_budget_dict.get(sub['sub_id'], 0)
         })
 
-    # Last year expenses
     ly_exp_dict = {}
     if ly_start and ly_end:
         cursor.execute("""
@@ -880,7 +855,6 @@ def pnl():
     ly_total_expenses = sum(ly_exp_dict.values())
     net = total_income - total_expenses
 
-    # Years for selector
     cursor.execute("""
         SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM expenses
         UNION SELECT DISTINCT EXTRACT(YEAR FROM date)::int as yr FROM income
@@ -888,21 +862,20 @@ def pnl():
     """)
     years = [r['yr'] for r in cursor.fetchall()] or [datetime.now().year]
 
-    # Tax summary — group by tax rate name
     tax_summary = []
     try:
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT tr.name as rate_name, tr.rate, SUM(e.tax_amount) as total_tax
             FROM expenses e
             JOIN tax_rates tr ON e.tax_rate_id = tr.id
-            WHERE e.archived = 0 AND e.date >= %s AND e.date{date_op if "date_op" in dir() else "<"} %s
+            WHERE e.archived = 0 AND e.date >= %s AND e.date < %s
             AND e.tax_amount IS NOT NULL AND e.tax_amount > 0
             GROUP BY tr.name, tr.rate
             ORDER BY tr.rate DESC
         """, (start_date, end_date))
         tax_summary = cursor.fetchall()
     except Exception:
-        pass  # tax columns may not exist yet
+        pass
 
     total_tax_paid = sum(float(r['total_tax']) for r in tax_summary)
 
@@ -936,12 +909,11 @@ def pnl():
 @app.route('/pnl/detail')
 @login_required
 def pnl_detail():
-    """Returns JSON list of transactions for a category/subcategory in a date range."""
     category_id = request.args.get('category_id')
     subcategory_id = request.args.get('subcategory_id')
     start_date = request.args.get('start_date')
     end_date = request.args.get('end_date')
-    record_type = request.args.get('type', 'expense')  # 'expense' or 'income'
+    record_type = request.args.get('type', 'expense')
 
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -1015,7 +987,6 @@ def split_transaction(expense_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Get the parent expense (or the child — find the root)
     cursor.execute("""
         SELECT e.*, s.name as source_name
         FROM expenses e
@@ -1028,7 +999,6 @@ def split_transaction(expense_id):
         cursor.close(); conn.close()
         return "Expense not found", 404
 
-    # If this is a child split, find the parent
     if expense['parent_transaction_id']:
         parent_id = expense['parent_transaction_id']
         cursor.execute("""
@@ -1039,7 +1009,6 @@ def split_transaction(expense_id):
         expense = cursor.fetchone()
         expense_id = parent_id
 
-    # Get existing child splits
     cursor.execute("""
         SELECT e.*, c.name as category_name, sc.name as subcategory_name, v.name as vendor_name
         FROM expenses e
@@ -1059,7 +1028,6 @@ def split_transaction(expense_id):
     vendors = cursor.fetchall()
     cursor.close(); conn.close()
 
-    # Build JSON for JS
     splits_json = json.dumps([{
         'amount': float(s['amount']),
         'category_id': s['category_id'],
@@ -1092,26 +1060,20 @@ def save_split_transaction(expense_id):
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    # Get original expense
     cursor.execute('SELECT * FROM expenses WHERE id = %s', (expense_id,))
     original = cursor.fetchone()
     if not original:
         cursor.close(); conn.close()
         return jsonify({'success': False, 'error': 'Expense not found'})
 
-    # Validate total
     total = sum(float(s['amount']) for s in splits)
     if abs(total - float(original['amount'])) > 0.01:
         cursor.close(); conn.close()
         return jsonify({'success': False, 'error': f'Split total ${total:.2f} must equal original ${float(original["amount"]):.2f}'})
 
-    # Delete any existing child splits
     cursor.execute('DELETE FROM expenses WHERE parent_transaction_id = %s', (expense_id,))
-
-    # Mark original as parent
     cursor.execute('UPDATE expenses SET is_split = 1 WHERE id = %s', (expense_id,))
 
-    # Insert child splits
     for split in splits:
         cursor.execute("""
             INSERT INTO expenses
@@ -1152,25 +1114,17 @@ def reset_split_transaction(expense_id):
 def upload_receipt(expense_id):
     if 'receipt' not in request.files:
         return jsonify({'success': False, 'error': 'No file provided'})
-    
     file = request.files['receipt']
     if file.filename == '':
         return jsonify({'success': False, 'error': 'No file selected'})
-    
     allowed = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'}
     ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
     if ext not in allowed:
         return jsonify({'success': False, 'error': 'File type not allowed'})
-    
-    # Read file data
     file_data = file.read()
-    
-    # Limit to 10MB
     if len(file_data) > 10 * 1024 * 1024:
         return jsonify({'success': False, 'error': 'File too large (max 10MB)'})
-    
     mime_type = file.content_type or f'image/{ext}'
-    
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -1179,7 +1133,6 @@ def upload_receipt(expense_id):
     conn.commit()
     cursor.close()
     conn.close()
-    
     return jsonify({'success': True})
 
 @app.route('/expenses/<int:expense_id>/receipt', methods=['GET'])
@@ -1192,10 +1145,8 @@ def view_receipt(expense_id):
     row = cursor.fetchone()
     cursor.close()
     conn.close()
-    
     if not row or not row['receipt_data']:
         return "No receipt found", 404
-    
     return Response(
         bytes(row['receipt_data']),
         mimetype=row['receipt_mime_type'] or 'image/jpeg'
@@ -1249,10 +1200,8 @@ def add_user():
 @app.route('/manage/users/delete/<int:user_id>', methods=['POST'])
 @login_required
 def delete_user(user_id):
-    # Only admin can delete users
     if session.get('username') != 'admin':
         return redirect(url_for('manage_users'))
-    # Prevent deleting yourself
     if user_id == session.get('user_id'):
         return redirect(url_for('manage_users'))
     conn = get_db_connection()
@@ -1268,7 +1217,6 @@ def delete_user(user_id):
 def change_password():
     user_id = int(request.form['user_id'])
     new_password = request.form['new_password']
-    # Users can only change their own password
     if user_id != session.get('user_id'):
         return redirect(url_for('manage_users'))
     if not new_password:
@@ -1281,7 +1229,6 @@ def change_password():
     cursor.close()
     conn.close()
     return redirect(url_for('manage_users'))
-
 
 
 @app.route('/reports')
@@ -1317,9 +1264,8 @@ def make_pdf_response(buffer, filename):
     )
 
 def pdf_header(doc_title, period_label):
-    from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.platypus import Paragraph, Spacer
+    from reportlab.platypus import Paragraph
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.enums import TA_CENTER
     elements = []
@@ -1336,12 +1282,9 @@ def pdf_header(doc_title, period_label):
 def expense_report_pdf():
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
     from io import BytesIO
 
-    # Get filters (same as view_expenses)
     date_from = request.args.get('date_from', '')
     date_to   = request.args.get('date_to', '')
     category_id  = request.args.get('category_id', '')
@@ -1380,7 +1323,6 @@ def expense_report_pdf():
 
     elements = pdf_header('Expense Report', period)
 
-    # Table
     data = [['Date', 'Description', 'Source', 'Category', 'Subcategory', 'Vendor', 'Amount']]
     for e in expenses:
         data.append([
@@ -1418,7 +1360,7 @@ def expense_report_pdf():
 def income_report_pdf():
     from reportlab.lib.pagesizes import letter, landscape
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
     from io import BytesIO
 
     date_from   = request.args.get('date_from', '')
@@ -1488,7 +1430,7 @@ def income_report_pdf():
 def budget_report_pdf():
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
     from io import BytesIO
 
     month = request.args.get('month', datetime.now().strftime('%Y-%m'))
@@ -1546,7 +1488,6 @@ def budget_report_pdf():
         ('FONTNAME',   (0,-1), (-1,-1), 'Helvetica-Bold'),
         ('GRID',       (0,0), (-1,-1), 0.5, colors.HexColor('#dee2e6')),
     ]
-    # Red for over budget rows
     for i, cat in enumerate(categories, 1):
         budgeted = cat_budgets.get(cat['id'], 0)
         spent    = cat_spending.get(cat['id'], 0)
@@ -1563,9 +1504,9 @@ def budget_report_pdf():
 @app.route('/reports/pnl/pdf')
 @login_required
 def pnl_report_pdf():
-    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle
     from io import BytesIO
 
     view_type      = request.args.get('view_type', 'month')
@@ -1579,22 +1520,20 @@ def pnl_report_pdf():
         start_date = f'{y}-{m:02d}-01'
         end_date   = f'{y+1}-01-01' if m == 12 else f'{y}-{m+1:02d}-01'
         period     = selected_month
-        use_lt     = True   # use < for month/year (end_date is first day of NEXT period)
+        use_lt     = True
     elif view_type == 'year':
         start_date = f'{selected_year}-01-01'
         end_date   = f'{selected_year+1}-01-01'
         period     = str(selected_year)
         use_lt     = True
     else:
-        # Custom range — validate dates
         if not date_from or not date_to:
             return "Please provide both a start and end date.", 400
         start_date = date_from
         end_date   = date_to
         period     = f"{date_from} to {date_to}"
-        use_lt     = False  # use <= for custom range (end_date is inclusive)
+        use_lt     = False
 
-    # Build date comparison operator
     date_op = '<' if use_lt else '<='
 
     conn = get_db_connection()
@@ -1621,34 +1560,19 @@ def pnl_report_pdf():
 
     net = total_income - total_expenses
 
-    # Tax summary
     tax_rows_pdf = []
-    try:
-        cursor.execute(f"""
-            SELECT tr.name as rate_name, SUM(e.tax_amount) as total_tax
-            FROM expenses e
-            JOIN tax_rates tr ON e.tax_rate_id = tr.id
-            WHERE e.archived=0 AND e.date>=%s AND e.date{date_op}%s
-            AND e.tax_amount IS NOT NULL AND e.tax_amount > 0
-            GROUP BY tr.name, tr.rate ORDER BY tr.rate DESC
-        """, (start_date, end_date))
-        tax_rows_pdf = cursor.fetchall()
-    except Exception:
-        pass
-    total_tax_pdf = sum(float(r['total_tax']) for r in tax_rows_pdf)
+    total_tax_pdf = 0
 
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter,
                             leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
     elements = pdf_header('Profit & Loss Statement', period)
 
-    # Income section
     data = [['INCOME', 'Amount']]
     for r in income_rows:
         data.append([r['category_name'] or 'Uncategorized', f"${float(r['total']):.2f}"])
     data.append(['Total Income', f"${total_income:.2f}"])
-    data.append(['', ''])  # spacer row
-    # Expense section
+    data.append(['', ''])
     data.append(['EXPENSES', 'Amount'])
     for r in expense_rows:
         data.append([r['category_name'] or 'Uncategorized', f"${float(r['total']):.2f}"])
@@ -1656,50 +1580,34 @@ def pnl_report_pdf():
     data.append(['', ''])
     data.append(['NET ' + ('SURPLUS' if net >= 0 else 'DEFICIT'), f"${abs(net):.2f}"])
 
-    # Tax summary section
-    if tax_rows_pdf:
-        data.append(['', ''])
-        data.append(['TAX SUMMARY', ''])
-        for r in tax_rows_pdf:
-            data.append([r['rate_name'], f"${float(r['total_tax']):.2f}"])
-        data.append(['Total Tax Paid', f"${total_tax_pdf:.2f}"])
+    income_end    = len(income_rows) + 1
+    expense_start = income_end + 2
+    expense_end   = expense_start + len(expense_rows)
+    net_row       = len(data) - 1
 
     col_widths = [360, 120]
     t = Table(data, colWidths=col_widths)
-
-    income_end  = len(income_rows) + 1
-    expense_start = income_end + 2
-    expense_end   = expense_start + len(expense_rows)
-    net_row = len(data) - 1
-
     style = [
         ('FONTSIZE',  (0,0), (-1,-1), 10),
         ('GRID',      (0,0), (-1,-1), 0.3, colors.HexColor('#dee2e6')),
         ('ALIGN',     (1,0), (1,-1), 'RIGHT'),
-        # Income header
         ('BACKGROUND',(0,0),(-1,0), colors.HexColor('#1a6b3c')),
         ('TEXTCOLOR', (0,0),(-1,0), colors.white),
         ('FONTNAME',  (0,0),(-1,0), 'Helvetica-Bold'),
-        # Income total
         ('BACKGROUND',(0,income_end),(-1,income_end), colors.HexColor('#e8f5e9')),
         ('FONTNAME',  (0,income_end),(-1,income_end), 'Helvetica-Bold'),
-        # Expense header
         ('BACKGROUND',(0,expense_start),(-1,expense_start), colors.HexColor('#c0392b')),
         ('TEXTCOLOR', (0,expense_start),(-1,expense_start), colors.white),
         ('FONTNAME',  (0,expense_start),(-1,expense_start), 'Helvetica-Bold'),
-        # Expense total
         ('BACKGROUND',(0,expense_end),(-1,expense_end), colors.HexColor('#fdecea')),
         ('FONTNAME',  (0,expense_end),(-1,expense_end), 'Helvetica-Bold'),
-        # Net row
         ('BACKGROUND',(0,net_row),(-1,net_row),
          colors.HexColor('#e8f5e9') if net >= 0 else colors.HexColor('#fdecea')),
         ('FONTNAME',  (0,net_row),(-1,net_row), 'Helvetica-Bold'),
         ('FONTSIZE',  (0,net_row),(-1,net_row), 12),
         ('TEXTCOLOR', (1,net_row),(1,net_row),
          colors.HexColor('#1a6b3c') if net >= 0 else colors.HexColor('#c0392b')),
-        # Alternating rows for income
         ('ROWBACKGROUNDS', (0,1),(-1,income_end-1), [colors.white, colors.HexColor('#f0faf4')]),
-        # Alternating rows for expenses
         ('ROWBACKGROUNDS', (0,expense_start+1),(-1,expense_end-1), [colors.white, colors.HexColor('#fef9f9')]),
     ]
     t.setStyle(TableStyle(style))
@@ -1760,7 +1668,6 @@ def csv_import():
     sources = cursor.fetchall()
     cursor.execute('SELECT * FROM categories ORDER BY name')
     categories = cursor.fetchall()
-    # Load saved templates
     templates = []
     try:
         cursor.execute('SELECT * FROM csv_templates ORDER BY name')
@@ -1810,14 +1717,13 @@ def csv_import_process():
             description = row['description'][:255]
 
             if row['type'] == 'expense':
-                # Duplicate check — same date, amount, description
                 cursor.execute("""
                     SELECT COUNT(*) as cnt FROM expenses
                     WHERE date = %s AND amount = %s
                     AND LOWER(description) = LOWER(%s)
                 """, (parsed_date, amount, description))
                 if cursor.fetchone()['cnt'] > 0:
-                    errors += 1  # count as skipped duplicate
+                    errors += 1
                     continue
                 cursor.execute("""
                     INSERT INTO expenses
@@ -1826,7 +1732,6 @@ def csv_import_process():
                 """, (parsed_date, source_id, description, category_id, amount))
                 expenses_imported += 1
             else:
-                # Duplicate check for income
                 cursor.execute("""
                     SELECT COUNT(*) as cnt FROM income
                     WHERE date = %s AND amount = %s
@@ -1982,10 +1887,8 @@ def backup_income():
 def admin_clear():
     if session.get('username') != 'admin':
         return jsonify({'success': False, 'error': 'Admin only'})
-    
     action = request.form.get('action')
     confirm = request.form.get('confirm', '').strip().upper()
-    
     if confirm != 'DELETE':
         return jsonify({'success': False, 'error': 'Type DELETE to confirm'})
 
@@ -2027,7 +1930,6 @@ def admin_clear():
 @app.route('/csv-import/check-duplicates', methods=['POST'])
 @login_required
 def check_duplicates():
-    """Check which rows already exist in the database."""
     data = request.get_json()
     rows = data.get('rows', [])
     duplicate_indices = []
@@ -2200,7 +2102,6 @@ def toggle_recurring_expense(rec_id):
 @app.route('/recurring/expense/post/<int:rec_id>', methods=['POST'])
 @login_required
 def post_recurring_expense(rec_id):
-    """Manually post a recurring expense as an actual expense for today."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute('SELECT * FROM recurring_expenses WHERE id = %s', (rec_id,))
@@ -2219,7 +2120,6 @@ def post_recurring_expense(rec_id):
     cursor.close(); conn.close()
     return redirect(url_for('recurring'))
 
-# ---- Recurring Income ----
 @app.route('/recurring/income/add', methods=['POST'])
 @login_required
 def add_recurring_income():
@@ -2268,7 +2168,6 @@ def toggle_recurring_income(rec_id):
 @app.route('/recurring/income/post/<int:rec_id>', methods=['POST'])
 @login_required
 def post_recurring_income(rec_id):
-    """Manually post a recurring income as an actual income entry."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cursor.execute('SELECT * FROM recurring_income WHERE id = %s', (rec_id,))

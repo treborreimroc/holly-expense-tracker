@@ -37,10 +37,80 @@ def login_required(f):
 def index():
     return redirect(url_for('login'))
 
+# ============= INSPIRATION BOOK =============
 @app.route('/inspiration')
 @login_required
 def inspiration():
     return render_template('inspiration.html')
+
+@app.route('/inspiration/entry/<int:month>/<int:day>')
+@login_required
+def inspiration_entry(month, day):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        'SELECT * FROM inspiration_entries WHERE month = %s AND day = %s',
+        (month, day)
+    )
+    row = cursor.fetchone()
+    cursor.close(); conn.close()
+    if row:
+        return jsonify({'entry': {
+            'title': row['title'],
+            'quote': row['quote'],
+            'commentary': row['commentary'],
+            'affirmation': row['affirmation']
+        }})
+    return jsonify({'entry': None})
+
+@app.route('/inspiration/month/<int:month>')
+@login_required
+def inspiration_month(month):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        'SELECT day FROM inspiration_entries WHERE month = %s ORDER BY day',
+        (month,)
+    )
+    days = [row['day'] for row in cursor.fetchall()]
+    cursor.close(); conn.close()
+    return jsonify({'days': days})
+
+@app.route('/inspiration/random')
+@login_required
+def inspiration_random():
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cursor.execute(
+        'SELECT month, day FROM inspiration_entries ORDER BY RANDOM() LIMIT 1'
+    )
+    row = cursor.fetchone()
+    cursor.close(); conn.close()
+    if row:
+        return jsonify({'month': row['month'], 'day': row['day']})
+    return jsonify({'month': 1, 'day': 1})
+
+@app.route('/inspiration/edit', methods=['POST'])
+@login_required
+def inspiration_edit():
+    if session.get('username') != 'admin':
+        return jsonify({'success': False, 'error': 'Admin only'})
+    data = request.get_json()
+    month       = int(data.get('month', 0))
+    day         = int(data.get('day', 0))
+    title       = data.get('title', '').strip()
+    quote       = data.get('quote', '').strip()
+    commentary  = data.get('commentary', '').strip()
+    affirmation = data.get('affirmation', '').strip()
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE inspiration_entries
+        SET title=%s, quote=%s, commentary=%s, affirmation=%s
+        WHERE month=%s AND day=%s
+    """, (title, quote, commentary, affirmation, month, day))
+    conn.commit(); cursor.close(); conn.close()
+    return jsonify({'success': True})
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():

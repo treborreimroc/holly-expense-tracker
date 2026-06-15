@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Your Year of Becoming</title>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Lora:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ===== BASE ===== */
+:root { --font-size: 16px; }
+
+/* ===== THEMES ===== */
+body.theme-parchment {
+    --bg: linear-gradient(135deg, #1a0f08 0%, #2d1a0e 50%, #1a0f08 100%);
+    --page-left: linear-gradient(to right, #f0e8d8, #f5f0e8 15%, #f5f0e8 85%, #ece4d2);
+    --page-right: linear-gradient(to left, #ede5d4, #f5f0e8 15%, #f5f0e8 85%, #f0e8d8);
+    --spine-bg: linear-gradient(to right, #6b3410, #8b4513, #a05520, #8b4513, #6b3410);
+    --ink: #2c1810;
+    --ink-soft: #4a3728;
+    --gold: #c9a84c;
+    --gold-light: #e8c97e;
+    --accent: #8b2020;
+    --quote-bg: rgba(139,69,19,0.04);
+    --aff-bg: linear-gradient(135deg, rgba(139,69,19,0.08), rgba(139,69,19,0.03));
+    --aff-border: rgba(201,168,76,0.4);
+    --line-color: rgba(139,100,60,0.06);
+    --day-btn-bg: rgba(139,69,19,0.1);
+    --day-btn-border: rgba(139,69,19,0.3);
+    --day-active-bg: #8b4513;
+    --tab-active-bg: #f5f0e8;
+    --tab-active-color: #6b3410;
+    --page-num-color: rgba(74,55,40,0.4);
+}
+
+body.theme-dark {
+    --bg: linear-gradient(135deg, #0a0a0a 0%, #1a1a2e 50%, #0a0a0a 100%);
+    --page-left: linear-gradient(to right, #1e1e2e, #252535 15%, #252535 85%, #1a1a28);
+    --page-right: linear-gradient(to left, #1a1a28, #252535 15%, #252535 85%, #1e1e2e);
+    --spine-bg: linear-gradient(to right, #0d0d1a, #1a1a35, #252550, #1a1a35, #0d0d1a);
+    --ink: #e8e0d0;
+    --ink-soft: #b8b0a0;
+    --gold: #d4af37;
+    --gold-light: #f0cc55;
+    --accent: #c0785a;
+    --quote-bg: rgba(212,175,55,0.06);
+    --aff-bg: linear-gradient(135deg, rgba(212,175,55,0.1), rgba(212,175,55,0.04));
+    --aff-border: rgba(212,175,55,0.3);
+    --line-color: rgba(255,255,255,0.03);
+    --day-btn-bg: rgba(212,175,55,0.08);
+    --day-btn-border: rgba(212,175,55,0.2);
+    --day-active-bg: #4a3f20;
+    --tab-active-bg: #252535;
+    --tab-active-color: #d4af37;
+    --page-num-color: rgba(184,176,160,0.4);
+}
+
+body.theme-forest {
+    --bg: linear-gradient(135deg, #0a1f0a 0%, #1a3a1a 50%, #0a1f0a 100%);
+    --page-left: linear-gradient(to right, #e8f0e8, #f0f5f0 15%, #f0f5f0 85%, #e0ebe0);
+    --page-right: linear-gradient(to left, #dce8dc, #f0f5f0 15%, #f0f5f0 85%, #e8f0e8);
+    --spine-bg: linear-gradient(to right, #1a3a1a, #2d5a2d, #3a7a3a, #2d5a2d, #1a3a1a);
+    --ink: #1a2e1a;
+    --ink-soft: #2e4a2e;
+    --gold: #8fbc5a;
+    --gold-light: #b0d878;
+    --accent: #4a7a2a;
+    --quote-bg: rgba(47,90,47,0.05);
+    --aff-bg: linear-gradient(135deg, rgba(47,90,47,0.08), rgba(47,90,47,0.03));
+    --aff-border: rgba(143,188,90,0.4);
+    --line-color: rgba(47,90,47,0.05);
+    --day-btn-bg: rgba(47,90,47,0.08);
+    --day-btn-border: rgba(47,90,47,0.25);
+    --day-active-bg: #2d5a2d;
+    --tab-active-bg: #f0f5f0;
+    --tab-active-color: #1a3a1a;
+    --page-num-color: rgba(46,74,46,0.4);
+}
+
+body.theme-ocean {
+    --bg: linear-gradient(135deg, #05101f 0%, #0a2040 50%, #05101f 100%);
+    --page-left: linear-gradient(to right, #e8f0f8, #f0f5fc 15%, #f0f5fc 85%, #e0eaf5);
+    --page-right: linear-gradient(to left, #dce8f5, #f0f5fc 15%, #f0f5fc 85%, #e8f0f8);
+    --spine-bg: linear-gradient(to right, #051020, #0a2040, #104070, #0a2040, #051020);
+    --ink: #0a1e35;
+    --ink-soft: #1a3a5a;
+    --gold: #5aaad4;
+    --gold-light: #7cc4e8;
+    --accent: #1a6090;
+    --quote-bg: rgba(10,60,100,0.05);
+    --aff-bg: linear-gradient(135deg, rgba(10,60,100,0.08), rgba(10,60,100,0.03));
+    --aff-border: rgba(90,170,212,0.4);
+    --line-color: rgba(10,60,100,0.05);
+    --day-btn-bg: rgba(10,60,100,0.08);
+    --day-btn-border: rgba(10,60,100,0.2);
+    --day-active-bg: #0a3060;
+    --tab-active-bg: #f0f5fc;
+    --tab-active-color: #0a2040;
+    --page-num-color: rgba(26,58,90,0.4);
+}
+
+body.theme-linen {
+    --bg: linear-gradient(135deg, #2a2520 0%, #3a3530 50%, #2a2520 100%);
+    --page-left: linear-gradient(to right, #f5f2ec, #faf8f4 15%, #faf8f4 85%, #f0ede6);
+    --page-right: linear-gradient(to left, #eceae3, #faf8f4 15%, #faf8f4 85%, #f5f2ec);
+    --spine-bg: linear-gradient(to right, #2a2520, #3a3530, #4a4540, #3a3530, #2a2520);
+    --ink: #2a2520;
+    --ink-soft: #4a4540;
+    --gold: #9a8a6a;
+    --gold-light: #baa880;
+    --accent: #6a5a3a;
+    --quote-bg: rgba(100,90,60,0.04);
+    --aff-bg: linear-gradient(135deg, rgba(100,90,60,0.07), rgba(100,90,60,0.02));
+    --aff-border: rgba(154,138,106,0.4);
+    --line-color: rgba(100,90,60,0.05);
+    --day-btn-bg: rgba(100,90,60,0.08);
+    --day-btn-border: rgba(100,90,60,0.25);
+    --day-active-bg: #4a4030;
+    --tab-active-bg: #faf8f4;
+    --tab-active-color: #2a2520;
+    --page-num-color: rgba(74,69,64,0.4);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    min-height: 100vh;
+    font-family: "Inter", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px 16px 40px;
+}
+
+/* TOP BAR */
+.top-bar {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.book-title-header {
+    font-family: "Playfair Display", serif;
+    color: var(--gold);
+    font-size: 1.4rem;
+    letter-spacing: 0.04em;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    background: rgba(255,255,255,0.1);
+    color: var(--gold-light);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 7px 14px;
+    border-radius: 4px;
+    font-family: "Inter", sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+.btn:hover { background: rgba(255,255,255,0.18); }
+
+.font-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 4px;
+    padding: 4px 8px;
+}
+.font-controls span { color: var(--gold); font-size: 0.7rem; letter-spacing: 0.05em; margin-right: 4px; }
+.font-btn {
+    background: none;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--gold-light);
+    width: 24px; height: 24px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.15s;
+    display: flex; align-items: center; justify-content: center;
+}
+.font-btn:hover { background: rgba(255,255,255,0.12); }
+
+/* THEME PICKER */
+.theme-bar {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.theme-label {
+    color: rgba(255,255,255,0.5);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+.theme-swatch {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+}
+.theme-swatch:hover { transform: scale(1.15); border-color: rgba(255,255,255,0.6); }
+.theme-swatch.active { border-color: white; box-shadow: 0 0 0 2px rgba(255,255,255,0.4); }
+.swatch-parchment { background: radial-gradient(#8b4513, #f5f0e8); }
+.swatch-dark      { background: radial-gradient(#d4af37, #1a1a2e); }
+.swatch-forest    { background: radial-gradient(#2d5a2d, #f0f5f0); }
+.swatch-ocean     { background: radial-gradient(#0a2040, #f0f5fc); }
+.swatch-linen     { background: radial-gradient(#4a4540, #faf8f4); }
+
+/* MONTH TABS */
+.month-tabs {
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    gap: 3px;
+    margin-bottom: 0;
+    flex-wrap: wrap;
+}
+.month-tab {
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.45);
+    padding: 5px 10px;
+    border-radius: 4px 4px 0 0;
+    font-size: 0.72rem;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.2s;
+    border-bottom-color: transparent;
+}
+.month-tab:hover { background: rgba(255,255,255,0.12); color: var(--gold); }
+.month-tab.active {
+    background: var(--tab-active-bg);
+    color: var(--tab-active-color);
+    border-color: var(--gold);
+    border-bottom-color: var(--tab-active-bg);
+    font-weight: 600;
+}
+
+/* DAY PICKER */
+.day-picker {
+    width: 100%;
+    max-width: 1100px;
+    background: var(--tab-active-bg);
+    border: 1px solid var(--gold);
+    border-top: none;
+    border-radius: 0 4px 4px 4px;
+    padding: 10px 14px;
+    display: none;
+    margin-bottom: 14px;
+}
+.day-picker.open { display: block; }
+.day-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+.day-btn {
+    background: var(--day-btn-bg);
+    border: 1px solid var(--day-btn-border);
+    color: var(--ink);
+    width: 32px; height: 32px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: "Lora", serif;
+}
+.day-btn:hover { background: var(--day-active-bg); color: var(--gold-light); }
+.day-btn.active { background: var(--day-active-bg); color: var(--gold-light); font-weight: 700; }
+.day-btn.no-entry { opacity: 0.28; cursor: not-allowed; }
+.day-btn.no-entry:hover { background: var(--day-btn-bg); color: var(--ink); }
+
+/* BOOK */
+.book-wrap { width: 100%; max-width: 1100px; }
+.book {
+    display: flex;
+    width: 100%;
+    min-height: 580px;
+    box-shadow: -8px 8px 40px rgba(0,0,0,0.4), 8px 8px 40px rgba(0,0,0,0.4);
+    border-radius: 2px 6px 6px 2px;
+}
+
+.book-spine {
+    width: 24px; min-width: 24px;
+    background: var(--spine-bg);
+    border-radius: 2px 0 0 2px;
+    display: flex; align-items: center; justify-content: center;
+}
+.spine-text {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    color: var(--gold);
+    font-family: "Playfair Display", serif;
+    font-size: 0.55rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    opacity: 0.7;
+    white-space: nowrap;
+}
+
+.page-left {
+    flex: 1;
+    background: var(--page-left);
+    padding: 40px 36px 32px 32px;
+    display: flex; flex-direction: column;
+    border-right: 1px solid rgba(0,0,0,0.08);
+    position: relative; overflow: hidden;
+}
+.page-right {
+    flex: 1;
+    background: var(--page-right);
+    padding: 40px 32px 32px 36px;
+    display: flex; flex-direction: column;
+    position: relative; overflow: hidden;
+}
+.page-left::before, .page-right::before {
+    content: "";
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: repeating-linear-gradient(
+        transparent,
+        transparent calc(var(--font-size) * 1.8 - 1px),
+        var(--line-color) calc(var(--font-size) * 1.8)
+    );
+    pointer-events: none;
+}
+
+.date-display {
+    text-align: center;
+    margin-bottom: 24px;
+    padding-bottom: 18px;
+    border-bottom: 2px solid var(--gold);
+}
+.date-day {
+    font-family: "Playfair Display", serif;
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+}
+.date-month {
+    font-family: "Playfair Display", serif;
+    font-size: clamp(0.9rem, 2vw, 1.3rem);
+    font-weight: 400;
+    color: var(--ink-soft);
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+.date-ornament { color: var(--gold); font-size: 1.2rem; margin-top: 8px; letter-spacing: 0.3em; }
+
+.entry-title-left {
+    font-family: "Playfair Display", serif;
+    font-size: clamp(0.8rem, 1.4vw, 1rem);
+    font-weight: 600;
+    color: var(--accent);
+    text-align: center;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    line-height: 1.4;
+}
+
+.quote-block {
+    flex: 1;
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 18px 14px;
+    background: var(--quote-bg);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 4px 4px 0;
+    margin-bottom: 16px;
+    position: relative;
+}
+.quote-mark {
+    font-family: "Playfair Display", serif;
+    font-size: 4.5rem;
+    color: var(--gold);
+    opacity: 0.2;
+    line-height: 0.6;
+    position: absolute;
+    top: 10px; left: 10px;
+}
+.quote-text {
+    font-family: "Lora", serif;
+    font-style: italic;
+    font-size: var(--font-size);
+    color: var(--ink);
+    line-height: 1.75;
+    text-align: center;
+    padding: 0 6px;
+    position: relative; z-index: 1;
+}
+
+.page-number {
+    font-family: "Lora", serif;
+    font-size: 0.72rem;
+    color: var(--page-num-color);
+    text-align: center;
+    margin-top: auto;
+    padding-top: 10px;
+}
+
+.section-label {
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--gold);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+}
+.section-label::after {
+    content: ""; flex: 1; height: 1px;
+    background: linear-gradient(to right, var(--gold), transparent);
+}
+
+.commentary-section { flex: 1; margin-bottom: 16px; }
+.commentary-text {
+    font-family: "Lora", serif;
+    font-size: calc(var(--font-size) * 0.92);
+    color: var(--ink-soft);
+    line-height: 1.85;
+    text-align: justify;
+}
+
+.affirmation-section {
+    background: var(--aff-bg);
+    border: 1px solid var(--aff-border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-top: auto;
+    position: relative;
+}
+.affirmation-section::before {
+    content: "✦";
+    position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+    background: var(--page-right, #f5f0e8);
+    padding: 0 8px;
+    color: var(--gold); font-size: 0.85rem;
+}
+.affirmation-label {
+    font-size: 0.58rem; font-weight: 600;
+    letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 6px; text-align: center;
+}
+.affirmation-text {
+    font-family: "Lora", serif;
+    font-style: italic;
+    font-size: calc(var(--font-size) * 0.88);
+    color: var(--ink);
+    line-height: 1.6; text-align: center; font-weight: 500;
+}
+
+.no-entry-msg {
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    flex: 1; color: var(--ink-soft); text-align: center; gap: 10px;
+}
+.no-entry-msg .ornament { font-size: 2rem; color: var(--gold); opacity: 0.4; }
+.no-entry-msg p { font-family: "Lora", serif; font-style: italic; font-size: 0.9rem; }
+
+/* ADMIN EDIT */
+.admin-edit-btn {
+    position: absolute; top: 10px; right: 10px;
+    background: rgba(139,69,19,0.15);
+    border: 1px solid var(--gold);
+    color: var(--gold);
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: all 0.2s;
+    z-index: 10;
+}
+.admin-edit-btn:hover { background: var(--gold); color: #fff; }
+
+/* EDIT MODAL */
+.modal-overlay {
+    display: none;
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 1000;
+    align-items: center; justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+    background: #faf8f4;
+    border-radius: 8px;
+    padding: 28px;
+    width: 90%;
+    max-width: 680px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.modal h2 {
+    font-family: "Playfair Display", serif;
+    color: #2c1810;
+    margin-bottom: 20px;
+    font-size: 1.2rem;
+}
+.modal label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #6b3410;
+    margin-bottom: 4px;
+    margin-top: 14px;
+}
+.modal input[type=text], .modal textarea {
+    width: 100%;
+    border: 1px solid #d4b896;
+    border-radius: 4px;
+    padding: 8px 10px;
+    font-family: "Lora", serif;
+    font-size: 0.9rem;
+    color: #2c1810;
+    background: #fff;
+    resize: vertical;
+}
+.modal textarea { min-height: 90px; }
+.modal-btns {
+    display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end;
+}
+.modal-btn-save {
+    background: #8b4513; color: #fff;
+    border: none; padding: 9px 20px;
+    border-radius: 4px; cursor: pointer;
+    font-size: 0.85rem; font-weight: 600;
+}
+.modal-btn-save:hover { background: #a05520; }
+.modal-btn-cancel {
+    background: #eee; color: #555;
+    border: none; padding: 9px 20px;
+    border-radius: 4px; cursor: pointer;
+    font-size: 0.85rem;
+}
+.modal-save-msg {
+    font-size: 0.8rem; color: #2d7a2d;
+    margin-top: 8px; text-align: right;
+    display: none;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateX(6px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+.page-content-animated { animation: fadeIn 0.3s ease; }
+
+@media (max-width: 700px) {
+    .book { flex-direction: column; }
+    .book-spine { width: 100%; min-width: unset; height: 14px; border-radius: 2px 2px 0 0; }
+    .spine-text { writing-mode: horizontal-tb; transform: none; font-size: 0.5rem; }
+    .page-left, .page-right { padding: 22px 18px; }
+    .month-tab { font-size: 0.65rem; padding: 4px 7px; }
+}
+</style>
+</head>
+<body class="theme-parchment">
+
+<div class="top-bar">
+  <div class="book-title-header">✦ Your Year of Becoming</div>
+  <div class="controls">
+    <div class="font-controls">
+      <span>TEXT</span>
+      <button class="font-btn" onclick="adjustFont(-1)">−</button>
+      <button class="font-btn" onclick="adjustFont(1)">+</button>
+    </div>
+    <button class="btn" onclick="goToToday()">📅 Today</button>
+    <button class="btn" onclick="randomDay()">🎲 Random</button>
+  </div>
+</div>
+
+<!-- THEME PICKER -->
+<div class="theme-bar">
+  <span class="theme-label">Theme:</span>
+  <div class="theme-swatch swatch-parchment active" title="Parchment" onclick="setTheme('parchment', this)"></div>
+  <div class="theme-swatch swatch-dark"      title="Dark Leather" onclick="setTheme('dark', this)"></div>
+  <div class="theme-swatch swatch-forest"    title="Forest"       onclick="setTheme('forest', this)"></div>
+  <div class="theme-swatch swatch-ocean"     title="Ocean"        onclick="setTheme('ocean', this)"></div>
+  <div class="theme-swatch swatch-linen"     title="Linen"        onclick="setTheme('linen', this)"></div>
+</div>
+
+<!-- MONTH TABS -->
+<div class="month-tabs" id="monthTabs">
+  <div class="month-tab active" data-month="1"  onclick="selectMonth(1)">Jan</div>
+  <div class="month-tab"       data-month="2"  onclick="selectMonth(2)">Feb</div>
+  <div class="month-tab"       data-month="3"  onclick="selectMonth(3)">Mar</div>
+  <div class="month-tab"       data-month="4"  onclick="selectMonth(4)">Apr</div>
+  <div class="month-tab"       data-month="5"  onclick="selectMonth(5)">May</div>
+  <div class="month-tab"       data-month="6"  onclick="selectMonth(6)">Jun</div>
+  <div class="month-tab"       data-month="7"  onclick="selectMonth(7)">Jul</div>
+  <div class="month-tab"       data-month="8"  onclick="selectMonth(8)">Aug</div>
+  <div class="month-tab"       data-month="9"  onclick="selectMonth(9)">Sep</div>
+  <div class="month-tab"       data-month="10" onclick="selectMonth(10)">Oct</div>
+  <div class="month-tab"       data-month="11" onclick="selectMonth(11)">Nov</div>
+  <div class="month-tab"       data-month="12" onclick="selectMonth(12)">Dec</div>
+</div>
+
+<!-- DAY PICKER -->
+<div class="day-picker open" id="dayPicker">
+  <div class="day-grid" id="dayGrid"></div>
+</div>
+
+<!-- BOOK -->
+<div class="book-wrap">
+  <div class="book">
+    <div class="book-spine"><span class="spine-text">Your Year of Becoming</span></div>
+
+    <!-- LEFT PAGE -->
+    <div class="page-left" id="pageLeft">
+      <div class="page-content-animated" id="leftContent">
+        <div class="date-display">
+          <div class="date-day" id="displayDay">—</div>
+          <div class="date-month" id="displayMonth">—</div>
+          <div class="date-ornament">✦ ✦ ✦</div>
+        </div>
+        <div class="entry-title-left" id="entryTitle">Loading...</div>
+        <div class="quote-block">
+          <div class="quote-mark">"</div>
+          <div class="quote-text" id="quoteText"></div>
+        </div>
+        <div class="page-number" id="pageNumLeft">—</div>
+      </div>
+    </div>
+
+    <!-- RIGHT PAGE -->
+    <div class="page-right" id="pageRight">
+      <div class="page-content-animated" id="rightContent">
+        <div class="commentary-section">
+          <div class="section-label">Reflection</div>
+          <div class="commentary-text" id="commentaryText"></div>
+        </div>
+        <div class="affirmation-section">
+          <div class="affirmation-label">Daily Affirmation</div>
+          <div class="affirmation-text" id="affirmationText"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN EDIT MODAL -->
+<div class="modal-overlay" id="editModal">
+  <div class="modal">
+    <h2>✏️ Edit Entry</h2>
+    <input type="hidden" id="editMonth">
+    <input type="hidden" id="editDay">
+    <label>Title</label>
+    <input type="text" id="editTitle">
+    <label>Quote</label>
+    <textarea id="editQuote" rows="4"></textarea>
+    <label>Reflection / Commentary</label>
+    <textarea id="editCommentary" rows="6"></textarea>
+    <label>Daily Affirmation</label>
+    <textarea id="editAffirmation" rows="3"></textarea>
+    <div class="modal-btns">
+      <button class="modal-btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="modal-btn-save" onclick="saveEdit()">Save Changes</button>
+    </div>
+    <div class="modal-save-msg" id="saveMsg">✅ Saved successfully!</div>
+  </div>
+</div>
+
+<script>
+const MONTHS_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_DAYS  = [31,28,31,30,31,30,31,31,30,31,30,31];
+const IS_ADMIN    = {{ 'true' if session.get('username') == 'admin' else 'false' }};
+
+let currentMonth = 1;
+let currentDay   = 1;
+let fontSize     = 16;
+let currentEntry = null;
+
+// Cache entries fetched from server
+const entryCache = {};
+
+function adjustFont(delta) {
+    fontSize = Math.min(22, Math.max(12, fontSize + delta));
+    document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+    document.body.style.setProperty('--font-size', fontSize + 'px');
+    // Also set directly on text elements as fallback
+    document.querySelectorAll('.quote-text').forEach(el => el.style.fontSize = fontSize + 'px');
+    document.querySelectorAll('.commentary-text').forEach(el => el.style.fontSize = (fontSize * 0.92) + 'px');
+    document.querySelectorAll('.affirmation-text').forEach(el => el.style.fontSize = (fontSize * 0.88) + 'px');
+}
+
+function setTheme(name, el) {
+    document.body.className = 'theme-' + name;
+    document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+    localStorage.setItem('inspire_theme', name);
+}
+
+async function fetchEntry(month, day) {
+    const key = month + '-' + day;
+    if (entryCache[key] !== undefined) return entryCache[key];
+    try {
+        const resp = await fetch('/inspiration/entry/' + month + '/' + day);
+        const data = await resp.json();
+        entryCache[key] = data.entry || null;
+        return entryCache[key];
+    } catch(e) {
+        return null;
+    }
+}
+
+async function renderDayGrid(month) {
+    const grid = document.getElementById('dayGrid');
+    grid.innerHTML = '';
+    const days = MONTH_DAYS[month - 1];
+    // Fetch all entries for this month to know which have content
+    for (let d = 1; d <= days; d++) {
+        const btn = document.createElement('button');
+        btn.className = 'day-btn';
+        btn.textContent = d;
+        btn.dataset.month = month;
+        btn.dataset.day = d;
+        if (d === currentDay && month === currentMonth) btn.classList.add('active');
+        btn.onclick = () => goToDate(month, d);
+        grid.appendChild(btn);
+    }
+    // Check which days have entries
+    try {
+        const resp = await fetch('/inspiration/month/' + month);
+        const data = await resp.json();
+        const haveDays = new Set(data.days || []);
+        grid.querySelectorAll('.day-btn').forEach(btn => {
+            if (!haveDays.has(parseInt(btn.dataset.day))) {
+                btn.classList.add('no-entry');
+                btn.onclick = null;
+            }
+        });
+    } catch(e) {}
+}
+
+function selectMonth(month) {
+    document.querySelectorAll('.month-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.month-tab[data-month="' + month + '"]').classList.add('active');
+    document.getElementById('dayPicker').classList.add('open');
+    currentMonth = month;
+    renderDayGrid(month);
+}
+
+async function goToDate(month, day) {
+    currentMonth = month;
+    currentDay   = day;
+
+    document.querySelectorAll('.month-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector('.month-tab[data-month="' + month + '"]').classList.add('active');
+    renderDayGrid(month);
+
+    document.getElementById('displayDay').textContent   = day;
+    document.getElementById('displayMonth').textContent = MONTHS_FULL[month - 1];
+    document.getElementById('pageNumLeft').textContent  = MONTHS_FULL[month - 1] + ' ' + day;
+
+    const entry = await fetchEntry(month, day);
+    currentEntry = entry;
+
+    // Animate
+    ['leftContent','rightContent'].forEach(id => {
+        const el = document.getElementById(id);
+        el.style.animation = 'none';
+        el.offsetHeight;
+        el.style.animation = '';
+    });
+
+    if (entry) {
+        document.getElementById('entryTitle').textContent    = entry.title || '';
+        document.getElementById('quoteText').textContent     = entry.quote || '';
+        document.getElementById('commentaryText').textContent = entry.commentary || '';
+        document.getElementById('affirmationText').textContent = entry.affirmation || '';
+
+        // Admin edit button
+        const leftPage = document.getElementById('pageLeft');
+        const existing = leftPage.querySelector('.admin-edit-btn');
+        if (existing) existing.remove();
+        if (IS_ADMIN) {
+            const editBtn = document.createElement('button');
+            editBtn.className = 'admin-edit-btn';
+            editBtn.textContent = '✏️ Edit';
+            editBtn.onclick = openModal;
+            leftPage.appendChild(editBtn);
+        }
+    } else {
+        document.getElementById('entryTitle').textContent = '— No Entry —';
+        document.getElementById('quoteText').textContent  = '';
+        document.getElementById('rightContent').innerHTML = `
+            <div class="no-entry-msg">
+                <div class="ornament">✦</div>
+                <p>No entry for this date.</p>
+            </div>`;
+    }
+}
+
+function goToToday() {
+    const now = new Date();
+    goToDate(now.getMonth() + 1, now.getDate());
+    document.querySelector('.book-wrap').scrollIntoView({behavior:'smooth'});
+}
+
+async function randomDay() {
+    try {
+        const resp = await fetch('/inspiration/random');
+        const data = await resp.json();
+        if (data.month && data.day) {
+            goToDate(data.month, data.day);
+            document.querySelector('.book-wrap').scrollIntoView({behavior:'smooth'});
+        }
+    } catch(e) {}
+}
+
+// ADMIN MODAL
+function openModal() {
+    if (!currentEntry) return;
+    document.getElementById('editMonth').value       = currentMonth;
+    document.getElementById('editDay').value         = currentDay;
+    document.getElementById('editTitle').value       = currentEntry.title || '';
+    document.getElementById('editQuote').value       = currentEntry.quote || '';
+    document.getElementById('editCommentary').value  = currentEntry.commentary || '';
+    document.getElementById('editAffirmation').value = currentEntry.affirmation || '';
+    document.getElementById('saveMsg').style.display = 'none';
+    document.getElementById('editModal').classList.add('open');
+}
+
+function closeModal() {
+    document.getElementById('editModal').classList.remove('open');
+}
+
+async function saveEdit() {
+    const month       = document.getElementById('editMonth').value;
+    const day         = document.getElementById('editDay').value;
+    const title       = document.getElementById('editTitle').value;
+    const quote       = document.getElementById('editQuote').value;
+    const commentary  = document.getElementById('editCommentary').value;
+    const affirmation = document.getElementById('editAffirmation').value;
+
+    try {
+        const resp = await fetch('/inspiration/edit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({month, day, title, quote, commentary, affirmation})
+        });
+        const data = await resp.json();
+        if (data.success) {
+            // Update cache and display
+            const key = month + '-' + day;
+            entryCache[key] = {title, quote, commentary, affirmation};
+            currentEntry = entryCache[key];
+            document.getElementById('entryTitle').textContent     = title;
+            document.getElementById('quoteText').textContent      = quote;
+            document.getElementById('commentaryText').textContent = commentary;
+            document.getElementById('affirmationText').textContent = affirmation;
+            document.getElementById('saveMsg').style.display = 'block';
+            setTimeout(closeModal, 1200);
+        }
+    } catch(e) {
+        alert('Save failed. Please try again.');
+    }
+}
+
+// INIT
+window.addEventListener('DOMContentLoaded', () => {
+    // Restore theme
+    const saved = localStorage.getItem('inspire_theme') || 'parchment';
+    document.body.className = 'theme-' + saved;
+    const swatch = document.querySelector('.swatch-' + saved);
+    if (swatch) {
+        document.querySelectorAll('.theme-swatch').forEach(s => s.classList.remove('active'));
+        swatch.classList.add('active');
+    }
+    goToToday();
+});
+
+// Close modal on overlay click
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>

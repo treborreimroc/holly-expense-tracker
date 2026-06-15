@@ -703,6 +703,11 @@ const entryCache = {};
 function adjustFont(delta) {
     fontSize = Math.min(22, Math.max(12, fontSize + delta));
     document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+    document.body.style.setProperty('--font-size', fontSize + 'px');
+    // Also set directly on text elements as fallback
+    document.querySelectorAll('.quote-text').forEach(el => el.style.fontSize = fontSize + 'px');
+    document.querySelectorAll('.commentary-text').forEach(el => el.style.fontSize = (fontSize * 0.92) + 'px');
+    document.querySelectorAll('.affirmation-text').forEach(el => el.style.fontSize = (fontSize * 0.88) + 'px');
 }
 
 function setTheme(name, el) {

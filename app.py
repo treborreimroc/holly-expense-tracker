@@ -93,8 +93,6 @@ def inspiration_random():
 @app.route('/inspiration/edit', methods=['POST'])
 @login_required
 def inspiration_edit():
-    if session.get('username') != 'admin':
-        return jsonify({'success': False, 'error': 'Admin only'})
     data = request.get_json()
     month       = int(data.get('month', 0))
     day         = int(data.get('day', 0))

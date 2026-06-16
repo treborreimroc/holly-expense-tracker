@@ -739,12 +739,23 @@ async function goToDate(month, day) {
     if (oldBtn) oldBtn.remove();
 
     if (entry) {
+        // Restore right page structure if it was replaced by no-entry message
+        if (!document.getElementById('commentaryText')) {
+            document.getElementById('rightContent').innerHTML = `
+                <div class="commentary-section">
+                    <div class="section-label">Reflection</div>
+                    <div class="commentary-text" id="commentaryText"></div>
+                </div>
+                <div class="affirmation-section">
+                    <div class="affirmation-label">Daily Affirmation</div>
+                    <div class="affirmation-text" id="affirmationText"></div>
+                </div>`;
+        }
         document.getElementById('entryTitle').textContent      = entry.title || '';
         document.getElementById('quoteText').textContent       = entry.quote || '';
         document.getElementById('commentaryText').textContent  = entry.commentary || '';
         document.getElementById('affirmationText').textContent = entry.affirmation || '';
 
-        // Show admin edit button if admin
         if (isAdmin) {
             const editBtn = document.createElement('button');
             editBtn.className = 'admin-edit-btn';
